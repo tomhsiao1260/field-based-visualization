@@ -43,6 +43,11 @@ def find_endpoints(skel):
                     main_endpoints = (endpoints[i], endpoints[j])
         endpoints = list(main_endpoints)
 
+    # reorder start, end points
+    y0, x0 = endpoints[0]
+    y1, x1 = endpoints[1]
+    if (x0 > x1): endpoints = [(y1, x1), (y0, x0)]
+
     return endpoints, G_filtered
 
 def find_distance(path_coords):
@@ -115,16 +120,20 @@ def generate_2d_points_array(points_top, points_bottom, num_points):
     points_top = np.array(points_top)
     points_bottom = np.array(points_bottom)
 
+    print(points_top[0], points_top[-1])
+    print(points_bottom[0], points_bottom[-1])
+
     # y, x, 2
-    points_array = np.zeros((50, num_points, 2))
+    num_depth = 200
+    points_array = np.zeros((num_depth, num_points, 2))
 
     # points_array[0] = points_top
     # points_array[-1] = points_bottom
-    points_array = np.linspace(points_top, points_bottom, 50, axis=0)
+    points_array = np.linspace(points_top, points_bottom, num_depth, axis=0)
 
     return points_array
 
-def main(output_dir, mask_dir, layer, interval, plot, num_points):
+def main(output_dir, mask_dir, tif_dir, layer, interval, plot, num_points):
     label_top, label_bottom = 3, 1
 
     # load mask
@@ -156,13 +165,27 @@ def main(output_dir, mask_dir, layer, interval, plot, num_points):
 
     points_array = generate_2d_points_array(selected_points_top, selected_points_bottom, num_points)
 
+    data = tifffile.imread(tif_dir)
+    data = data[0]
+
+    extracted_data = np.zeros((points_array.shape[0], points_array.shape[1]))
+
+    for i in range(points_array.shape[0]):
+        for j in range(points_array.shape[1]):
+            x, y = points_array[i, j]
+            extracted_data[i, j] = data[int(y), int(x)]
+
+    tifffile.imwrite("extracted_data.tif", extracted_data.astype(data.dtype))
+
+    num_depth = 200
+
     # if (True):
     if (plot):
         plt.figure(figsize=(8, 8))
         plt.imshow(skeleton_image_top, cmap='gray')
 
         for i in range(points_array.shape[0]):
-            plt.scatter(points_array[i, :, 0], points_array[i, :, 1], s=10, color=plt.cm.viridis(i / 50))
+            plt.scatter(points_array[i, :, 0], points_array[i, :, 1], s=10, color=plt.cm.viridis(i / num_depth))
 
         x_coords, y_coords = zip(*selected_points_top)
         plt.scatter(x_coords, y_coords, c='red', s=int(interval // 3))
@@ -177,10 +200,11 @@ if __name__ == "__main__":
     parser.add_argument('--d', type=int, default=5, help='Interval between each points or layers')
     args = parser.parse_args()
 
-    num_points = 150
+    num_points = 500
     z, y, x, layer = 3513, 1900, 3400, 0
     interval, plot = args.d, args.plot
     output_dir = '/Users/yao/Desktop/distort-space-test'
     mask_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_mask.nrrd'
+    tif_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_volume.tif'
 
-    main(output_dir, mask_dir, layer, interval, plot, num_points)
+    main(output_dir, mask_dir, tif_dir, layer, interval, plot, num_points)

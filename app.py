@@ -53,9 +53,13 @@ def find_distance(path_coords):
     return distances
 
 # select points (interp via distant)
-def find_points(path_coords, distances, interval):
+def find_points(path_coords, distances, interval, num_points=None):
     total_length = distances[-1]
-    num_points = int(total_length // interval) + 1
+
+    if not num_points:
+        num_points = int(total_length // interval) + 1
+    else:
+        interval = total_length / float(num_points - 1)
 
     idx = 1
     current_distance = interval
@@ -80,7 +84,7 @@ def find_points(path_coords, distances, interval):
 
     return selected_points
 
-def process_slice_to_point(skeleton_image, interval, prev_start=None, prev_end=None):
+def process_slice_to_point(skeleton_image, interval, num_points=None, prev_start=None, prev_end=None):
     # find endpoints & shortest path
     endpoints, G = find_endpoints(skeleton_image)
 
@@ -102,12 +106,25 @@ def process_slice_to_point(skeleton_image, interval, prev_start=None, prev_end=N
     total_length = distances[-1]
     # print(f"Total distance: {total_length}")
 
-    selected_points = find_points(path_coords, distances, interval)
+    selected_points = find_points(path_coords, distances, interval, num_points)
     # print("Selected Points:")
     # for point in selected_points: print(point)
     return selected_points, start, end
 
-def main(output_dir, mask_dir, layer, interval, plot):
+def generate_2d_points_array(points_top, points_bottom, num_points):
+    points_top = np.array(points_top)
+    points_bottom = np.array(points_bottom)
+
+    # y, x, 2
+    points_array = np.zeros((50, num_points, 2))
+
+    # points_array[0] = points_top
+    # points_array[-1] = points_bottom
+    points_array = np.linspace(points_top, points_bottom, 50, axis=0)
+
+    return points_array
+
+def main(output_dir, mask_dir, layer, interval, plot, num_points):
     label_top, label_bottom = 3, 1
 
     # load mask
@@ -134,15 +151,18 @@ def main(output_dir, mask_dir, layer, interval, plot):
     endpoints_top, G_top = find_endpoints(skeleton_image_top)
     endpoints_bottom, G_bottom = find_endpoints(skeleton_image_bottom)
 
-    selected_points_top, start, end = process_slice_to_point(skeleton_image_top, interval)
-    selected_points_bottom, _, _ = process_slice_to_point(skeleton_image_bottom, interval, start, end)
+    selected_points_top, start, end = process_slice_to_point(skeleton_image_top, interval, num_points)
+    selected_points_bottom, _, _ = process_slice_to_point(skeleton_image_bottom, interval, num_points, start, end)
 
-    print(selected_points_bottom)
+    points_array = generate_2d_points_array(selected_points_top, selected_points_bottom, num_points)
 
-    if (True):
-    # if (plot):
+    # if (True):
+    if (plot):
         plt.figure(figsize=(8, 8))
         plt.imshow(skeleton_image_top, cmap='gray')
+
+        for i in range(points_array.shape[0]):
+            plt.scatter(points_array[i, :, 0], points_array[i, :, 1], s=10, color=plt.cm.viridis(i / 50))
 
         x_coords, y_coords = zip(*selected_points_top)
         plt.scatter(x_coords, y_coords, c='red', s=int(interval // 3))
@@ -157,9 +177,10 @@ if __name__ == "__main__":
     parser.add_argument('--d', type=int, default=5, help='Interval between each points or layers')
     args = parser.parse_args()
 
+    num_points = 150
     z, y, x, layer = 3513, 1900, 3400, 0
     interval, plot = args.d, args.plot
     output_dir = '/Users/yao/Desktop/distort-space-test'
     mask_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_mask.nrrd'
 
-    main(output_dir, mask_dir, layer, interval, plot)
+    main(output_dir, mask_dir, layer, interval, plot, num_points)

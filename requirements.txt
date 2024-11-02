@@ -3,3 +3,5 @@ pynrrd
 tifffile
 scikit-image
 matplotlib
+networkx
+scipy

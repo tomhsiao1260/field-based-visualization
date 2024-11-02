@@ -1,0 +1,10 @@
+env
+.DS_Store
+__pycache__
+
+*tif
+*nrrd
+*obj
+*png
+*jpg
+*mtl

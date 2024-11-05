@@ -5,3 +5,4 @@ scikit-image
 matplotlib
 networkx
 scipy
+torch

@@ -84,16 +84,41 @@ if __name__ == "__main__":
     colors = list(plt.cm.tab10.colors)
     random.shuffle(colors)
 
+    # for i, component in enumerate(connected_components):
+    #     mask = np.full((300, 300), False)
+
+    #     for node in component:
+    #         mask[node[0], node[1]] = True
+
+    #     data[mask] = colors[i % len(colors)]
+
+    # plt.imshow(data)
+    # plt.axis("off") 
+    # plt.show()
+
+    nx.set_node_attributes(G, -1, "layer")
+    for level, component in enumerate(connected_components):
+        for node in component: G.nodes[node]["layer"] = level
+
+    pos = nx.multipartite_layout(G, subset_key="layer")
+
     for i, component in enumerate(connected_components):
         mask = np.full((300, 300), False)
 
         for node in component:
-            mask[node[0], node[1]] = True
+            x, y = pos[node]
+            x = int((x  + 1) / 2 * 299)
+            y = int((y + 1) / 2 * 299)
+
+            if 0 <= x < 300 and 0 <= y < 300:
+                mask[x, y] = True
 
         data[mask] = colors[i % len(colors)]
 
     plt.imshow(data)
-    plt.axis("off") 
+    plt.axis("off")
     plt.show()
+
+
 
 

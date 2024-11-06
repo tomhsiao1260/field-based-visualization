@@ -77,20 +77,23 @@ if __name__ == "__main__":
     print("edges number:", G.number_of_edges())
 
     # connected_components = list(nx.connected_components(G))
-    connected_components = [c for c in nx.connected_components(G) if len(c) >= 100]
+    connected_components = [c for c in nx.connected_components(G) if len(c) >= 20]
     print("graphs number:", len(connected_components))
 
-    # colors = list(plt.cm.tab10.colors)
-    # random.shuffle(colors)
-    # plt.figure(figsize=(8, 8))
+    data = np.zeros((300, 300, 3))
+    colors = list(plt.cm.tab10.colors)
+    random.shuffle(colors)
 
-    # for i, component in enumerate(connected_components):
-    #     nodes = list(component)
-    #     color = colors[i % len(colors)]
-    #     nx.draw_networkx_nodes(G, pos=nx.spring_layout(G), nodelist=nodes, node_color=[color])
-    #     nx.draw_networkx_edges(G, pos=nx.spring_layout(G), edgelist=G.subgraph(nodes).edges(), edge_color=color)
+    for i, component in enumerate(connected_components):
+        mask = np.full((300, 300), False)
 
-    # nx.draw_networkx_labels(G, pos=nx.spring_layout(G))
-    # plt.axis("off")
-    # plt.show()
+        for node in component:
+            mask[node[0], node[1]] = True
+
+        data[mask] = colors[i % len(colors)]
+
+    plt.imshow(data)
+    plt.axis("off") 
+    plt.show()
+
 

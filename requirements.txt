@@ -6,3 +6,5 @@ matplotlib
 networkx
 scipy
 torch
+opencv-python
+scikit-learn

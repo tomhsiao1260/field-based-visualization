@@ -166,7 +166,7 @@ def main(output_dir, mask_dir, tif_dir, layer, interval, plot, num_points):
     points_array = generate_2d_points_array(selected_points_top, selected_points_bottom, num_points)
 
     data = tifffile.imread(tif_dir)
-    data = data[0]
+    data = data[layer]
 
     extracted_data = np.zeros((points_array.shape[0], points_array.shape[1]))
 
@@ -174,8 +174,6 @@ def main(output_dir, mask_dir, tif_dir, layer, interval, plot, num_points):
         for j in range(points_array.shape[1]):
             x, y = points_array[i, j]
             extracted_data[i, j] = data[int(y), int(x)]
-
-    tifffile.imwrite("extracted_data.tif", extracted_data.astype(data.dtype))
 
     num_depth = 200
 
@@ -194,6 +192,13 @@ def main(output_dir, mask_dir, tif_dir, layer, interval, plot, num_points):
 
         plt.show()
 
+    # tifffile.imwrite("extracted_data.tif", extracted_data.astype(data.dtype))
+    return extracted_data.astype(data.dtype)
+
+def xyz_transform(data):
+    tifffile.imwrite("extracted_data_y.tif", data.transpose(1, 0, 2))
+    tifffile.imwrite("extracted_data_x.tif", data.transpose(2, 1, 0))
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('--plot', action='store_true', help='Plot the result')
@@ -201,10 +206,23 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     num_points = 500
-    z, y, x, layer = 3513, 1900, 3400, 0
+    z, y, x, layer = 3513, 1900, 3400, 50
     interval, plot = args.d, args.plot
     output_dir = '/Users/yao/Desktop/distort-space-test'
     mask_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_mask.nrrd'
     tif_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_volume.tif'
 
-    main(output_dir, mask_dir, tif_dir, layer, interval, plot, num_points)
+    data = np.zeros((768, 200, 500), dtype=np.uint8)
+
+    for layer in range(50):
+        print('processing: ', layer)
+        layer_data = main(output_dir, mask_dir, tif_dir, layer, interval, plot, num_points)
+        data[layer] = layer_data
+
+    tifffile.imwrite("extracted_data.tif", data)
+
+    # data = tifffile.imread("extracted_data.tif")
+    # xyz_transform(data)
+
+
+

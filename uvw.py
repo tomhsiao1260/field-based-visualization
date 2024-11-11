@@ -33,7 +33,7 @@ if __name__ == "__main__":
     # tifffile.imwrite('origin.tif', volume)
 
     # First Derivative (Green: > 0, Red: < 0)
-    thres = 0.2 * 255
+    thres = 0.1 * 255
     fd = torch.load('first_derivative.pt') * 255
     tensor = torch.zeros(fd.shape + (3,))
     tensor[..., 0][fd < -thres] = fd[fd < -thres]
@@ -77,47 +77,47 @@ if __name__ == "__main__":
     print("edges number:", G.number_of_edges())
 
     # connected_components = list(nx.connected_components(G))
-    connected_components = [c for c in nx.connected_components(G) if len(c) >= 20]
+    connected_components = [c for c in nx.connected_components(G) if len(c) >= 50]
     print("graphs number:", len(connected_components))
 
     data = np.zeros((300, 300, 3))
     colors = list(plt.cm.tab10.colors)
     random.shuffle(colors)
 
-    # for i, component in enumerate(connected_components):
-    #     mask = np.full((300, 300), False)
-
-    #     for node in component:
-    #         mask[node[0], node[1]] = True
-
-    #     data[mask] = colors[i % len(colors)]
-
-    # plt.imshow(data)
-    # plt.axis("off") 
-    # plt.show()
-
-    nx.set_node_attributes(G, -1, "layer")
-    for level, component in enumerate(connected_components):
-        for node in component: G.nodes[node]["layer"] = level
-
-    pos = nx.multipartite_layout(G, subset_key="layer")
-
     for i, component in enumerate(connected_components):
         mask = np.full((300, 300), False)
 
         for node in component:
-            x, y = pos[node]
-            x = int((x  + 1) / 2 * 299)
-            y = int((y + 1) / 2 * 299)
-
-            if 0 <= x < 300 and 0 <= y < 300:
-                mask[x, y] = True
+            mask[node[0], node[1]] = True
 
         data[mask] = colors[i % len(colors)]
 
     plt.imshow(data)
-    plt.axis("off")
+    plt.axis("off") 
     plt.show()
+
+    # nx.set_node_attributes(G, -1, "layer")
+    # for level, component in enumerate(connected_components):
+    #     for node in component: G.nodes[node]["layer"] = level
+
+    # pos = nx.multipartite_layout(G, subset_key="layer")
+
+    # for i, component in enumerate(connected_components):
+    #     mask = np.full((300, 300), False)
+
+    #     for node in component:
+    #         x, y = pos[node]
+    #         x = int((x  + 1) / 2 * 299)
+    #         y = int((y + 1) / 2 * 299)
+
+    #         if 0 <= x < 300 and 0 <= y < 300:
+    #             mask[x, y] = True
+
+    #     data[mask] = colors[i % len(colors)]
+
+    # plt.imshow(data)
+    # plt.axis("off")
+    # plt.show()
 
 
 

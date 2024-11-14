@@ -79,6 +79,38 @@ def find_distance(path_coords):
         distances.append(distances[-1] + dist)
     return distances
 
+# select points (interp via distant)
+def find_points(path_coords, distances, interval, num_points=None):
+    total_length = distances[-1]
+
+    if not num_points:
+        num_points = int(total_length // interval) + 1
+    else:
+        interval = total_length / float(num_points - 1)
+
+    idx = 1
+    current_distance = interval
+    selected_points = [path_coords[0]]
+
+    for i in range(1, num_points - 1):
+        while idx < len(distances) and distances[idx] < current_distance:
+            idx += 1
+        if idx == len(distances):
+            break
+        if distances[idx] == current_distance:
+            selected_points.append(path_coords[idx])
+        else:
+            prev_point = np.array(path_coords[idx -1])
+            next_point = np.array(path_coords[idx])
+            ratio = (current_distance - distances[idx -1]) / (distances[idx] - distances[idx -1])
+            interp_point = prev_point + ratio * (next_point - prev_point)
+            selected_points.append(tuple(interp_point))
+        current_distance += interval
+
+    selected_points.append(path_coords[-1])
+
+    return selected_points
+
 def process_slice_to_point(skeleton_image, interval, num_points=None, prev_start=None, prev_end=None):
     # find endpoints & shortest path
     endpoints, G = find_endpoints(skeleton_image)
@@ -208,10 +240,12 @@ if __name__ == '__main__':
         pc[boundary == 255] = 255
         pc[boundary == 50] = 50
 
-        # pc[0, :]  = pc[1, :]
-        # pc[-1, :] = pc[-2, :]
-        # pc[:, 0]  = pc[:, 1]
-        # pc[:, -1] = pc[:, -2]
+        pc[0, :]  = pc[1, :]
+        pc[-1, :] = pc[-2, :]
+        pc[:, 0]  = pc[:, 1]
+        pc[:, -1] = pc[:, -2]
+
+        pc[0, :] = 255
 
         for edge in mask_list: pc[edge] = pc[edge].mean()
 
@@ -227,39 +261,43 @@ if __name__ == '__main__':
     graph_start, graph_end = None, None
     interval, num_points = None, 100
 
-    i = 10
-    edge_image = np.zeros_like(potential, dtype=np.uint8)
-    edge_image[(potential > boundaries[i]) & (potential < boundaries[i+1])] = 255
-    edge_mask = skeletonize(edge_image)
-    skeleton_image = np.zeros_like(edge_mask)
-    skeleton_image[edge_mask] = 255
+    for i in range(len(boundaries)-1):
+        if (i < 8 or i > 38): continue
+        edge_image = np.zeros_like(potential, dtype=np.uint8)
+        edge_image[(potential > boundaries[i]) & (potential < boundaries[i+1])] = 255
+        edge_mask = skeletonize(edge_image)
+        skeleton_image = np.zeros_like(edge_mask)
+        skeleton_image[edge_mask] = 255
 
-    # for i in range(len(boundaries)-1):
-        # edge_image = np.zeros_like(potential, dtype=np.uint8)
-        # edge_image[(potential > boundaries[i]) & (potential < boundaries[i+1])] = 255
-        # edge_mask = skeletonize(edge_image)
-        # skeleton_image = np.zeros_like(edge_mask)
-        # skeleton_image[edge_mask] = 255
+        selected_points, start, end = process_slice_to_point(skeleton_image, interval, num_points, graph_start, graph_end)
+        if (i == 0): graph_start, graph_end = start, end
 
-        # selected_points, start, end = process_slice_to_point(skeleton_image, interval, num_points, graph_start, graph_end)
-        # if (i == 0): graph_start, graph_end = start, end
+        selected_points_list.append(selected_points)
 
-        # selected_points_list.append(selected_points)
+    points_array = np.zeros((len(selected_points_list), len(selected_points_list[0]), 2))
+    for i in range(points_array.shape[0]):
+        points_array[i] = np.array(selected_points_list[i])
+
+    extracted_data = np.zeros((points_array.shape[0], points_array.shape[1]))
+    for i in range(points_array.shape[0]):
+        for j in range(points_array.shape[1]):
+            x, y = points_array[i, j]
+            extracted_data[i, j] = image[int(y), int(x)]
 
     fig, axes = plt.subplots(1, 6, figsize=(5*6, 6))
-    axes[2].imshow(data)
-    axes[3].imshow(potential, cmap=cmap, norm=norm)
-    axes[1].imshow(boundary, cmap='gray')
+    axes[1].imshow(data)
+    axes[2].imshow(potential, cmap=cmap, norm=norm)
+    axes[3].imshow(boundary, cmap='gray')
     axes[0].imshow(image, cmap='gray', vmin=0, vmax=255)
-    axes[4].imshow(edge_image, cmap='gray', vmin=0, vmax=255)
+    axes[4].imshow(extracted_data, cmap='gray', vmin=0, vmax=255)
 
-    # for i, selected_points in enumerate(selected_points_list):
-    #     if (i % 2 == 0):
-    #         color = '#000000'
-    #     else:
-    #         color = '#ffffff'
-    #     x_coords, y_coords = zip(*selected_points)
-    #     axes[5].scatter(x_coords, y_coords, c=colors, s=1)
+    for i, selected_points in enumerate(selected_points_list):
+        if (i % 2 == 0):
+            color = '#ca17ae'
+        else:
+            color = '#ffffff'
+        x_coords, y_coords = zip(*selected_points)
+        axes[3].scatter(x_coords, y_coords, c=color, s=1)
 
     for ax in axes: ax.axis("off")
     plt.show()

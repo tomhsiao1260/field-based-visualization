@@ -53,6 +53,8 @@ def find_endpoints(skel):
 
     endpoints = [node for node, degree in G_filtered.degree() if degree == 1]
 
+    if (len(endpoints) == 0): return None, None
+
     # only select 2 endpoints with longest distance
     if len(endpoints) > 2:
         max_dist = 0
@@ -114,6 +116,7 @@ def find_points(path_coords, distances, interval, num_points=None):
 def process_slice_to_point(skeleton_image, interval, num_points=None, prev_start=None, prev_end=None):
     # find endpoints & shortest path
     endpoints, G = find_endpoints(skeleton_image)
+    if (endpoints is None): return None, None, None
 
     if (prev_start is None):
         start, end = endpoints[0], endpoints[1]
@@ -126,8 +129,11 @@ def process_slice_to_point(skeleton_image, interval, num_points=None, prev_start
         if (p > q): end, start = endpoints[0], endpoints[1]
     # print(f"Start (y, x): {start}, End (y, x): {end}")
 
-    path = nx.shortest_path(G, source=start, target=end)
-    path_coords = [(x, y) for y, x in path]
+    try:
+        path = nx.shortest_path(G, source=start, target=end)
+        path_coords = [(x, y) for y, x in path]
+    except:
+        return None, None, None
 
     distances = find_distance(path_coords)
     total_length = distances[-1]
@@ -237,8 +243,8 @@ if __name__ == '__main__':
         pc[1:-1, 1:-1] += potential[2:, 1:-1]
         pc[1:-1, 1:-1] /= 4
 
-        pc[boundary == 255] = 255
-        pc[boundary == 50] = 50
+        # pc[boundary == 255] = 255
+        # pc[boundary == 50] = 50
 
         pc[0, :]  = pc[1, :]
         pc[-1, :] = pc[-2, :]
@@ -246,12 +252,14 @@ if __name__ == '__main__':
         pc[:, -1] = pc[:, -2]
 
         pc[0, :] = 255
+        pc[-1, :] = 0
+        pc[boundary == 255] = pc[boundary == 255].mean()
 
         for edge in mask_list: pc[edge] = pc[edge].mean()
 
         potential = pc
 
-    num_intervals = 20
+    num_intervals = 50
     boundaries = np.linspace(0, 255, num_intervals * 2 + 1)
     colors = ['#000000', '#ffffff'] * num_intervals
     cmap = ListedColormap(colors)
@@ -261,16 +269,19 @@ if __name__ == '__main__':
     graph_start, graph_end = None, None
     interval, num_points = None, 100
 
-    for i in range(len(boundaries)-1):
-        if (i < 8 or i > 38): continue
+    for i in range(len(boundaries)-2):
         edge_image = np.zeros_like(potential, dtype=np.uint8)
         edge_image[(potential > boundaries[i]) & (potential < boundaries[i+1])] = 255
         edge_mask = skeletonize(edge_image)
         skeleton_image = np.zeros_like(edge_mask)
         skeleton_image[edge_mask] = 255
 
+        if (np.all(skeleton_image == 0)): continue
+
         selected_points, start, end = process_slice_to_point(skeleton_image, interval, num_points, graph_start, graph_end)
-        if (i == 0): graph_start, graph_end = start, end
+        if (graph_start == None): graph_start, graph_end = start, end
+        if (selected_points == None): continue
+        print(i)
 
         selected_points_list.append(selected_points)
 
@@ -284,11 +295,12 @@ if __name__ == '__main__':
             x, y = points_array[i, j]
             extracted_data[i, j] = image[int(y), int(x)]
 
-    fig, axes = plt.subplots(1, 6, figsize=(5*6, 6))
+    fig, axes = plt.subplots(1, 6, figsize=(6*6, 6))
     axes[1].imshow(data)
     axes[2].imshow(potential, cmap=cmap, norm=norm)
     axes[3].imshow(boundary, cmap='gray')
     axes[0].imshow(image, cmap='gray', vmin=0, vmax=255)
+
     axes[4].imshow(extracted_data, cmap='gray', vmin=0, vmax=255)
 
     for i, selected_points in enumerate(selected_points_list):
@@ -298,6 +310,14 @@ if __name__ == '__main__':
             color = '#ffffff'
         x_coords, y_coords = zip(*selected_points)
         axes[3].scatter(x_coords, y_coords, c=color, s=1)
+
+    h, w = potential.shape
+    dy, dx = np.gradient(potential)
+    axes[5].imshow(potential, cmap=cmap, norm=norm)
+    # same level line
+    axes[5].contour(potential, levels=20, colors='black', linewidths=0.5)
+    # gradient direction line
+    axes[5].streamplot(np.arange(w), np.arange(h), dx, dy, color='blue', linewidth=0.5)
 
     for ax in axes: ax.axis("off")
     plt.show()

@@ -6,6 +6,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from skimage.morphology import skeletonize
 from matplotlib.colors import ListedColormap
+from app import process_slice_to_point
 
 def generate_graph(skel):
     # build the connection
@@ -59,15 +60,34 @@ def update_mask(potential, mask, counts):
     pc[mask == 0] = potential[mask == 0]
     return pc
 
+def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
+    points_top = np.array(points_top)
+    points_bottom = np.array(points_bottom)
+
+    points_grid = np.linspace(points_top, points_bottom, num_depth * 5, axis=0).astype(int)
+    potential_grid = potential[points_grid[..., 1], points_grid[..., 0]]
+    levels = np.linspace(255, 0, num_depth) 
+
+    # y, x, 2
+    num_points = points_top.shape[0]
+    points_array = np.zeros((num_depth, num_points, 2))
+
+    for i in range(num_points):
+        points_array[:, i, 0] = np.interp(levels, potential_grid[:, i][::-1], points_grid[:, i, 0][::-1])
+        points_array[:, i, 1] = np.interp(levels, potential_grid[:, i][::-1], points_grid[:, i, 1][::-1])
+
+    return points_array
+
 if __name__ == "__main__":
-    z, y, x, layer = 3513, 1900, 3400, 0
+    z, y, x, layer = 3513, 1900, 3400, 100
     tif_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_volume.tif'
     mask_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_mask.nrrd'
 
     # plot init
-    plot_num = 6
-    fig, axes = plt.subplots(1, plot_num, figsize=(plot_num*6, 6))
-    for ax in axes: ax.axis("off")
+    fig, axes = plt.subplots(2, 5, figsize=(10, 5))
+
+    axes = axes.ravel()
+    for ax in axes: ax.axis('off')
 
     # load tif image
     tif_image = tifffile.imread(tif_dir)
@@ -106,12 +126,31 @@ if __name__ == "__main__":
 
     # mask
     mask = np.zeros_like(tif_image, dtype=np.uint8)
-    print('jfiwe', len(components))
 
     for i, component in enumerate(components[:255], start=1):
         for node in component: mask[node] = i
 
     axes[4].imshow(mask, cmap="nipy_spectral", origin="upper")
+
+    # extract top, bottom boundary points
+    num_points, interval = 500, None
+
+    skeleton_image_top = np.zeros_like(boundary, dtype=bool)
+    skeleton_image_top[boundary == top_label] = True
+    skeleton_image_top = skeletonize(skeleton_image_top)
+
+    skeleton_image_bot = np.zeros_like(boundary, dtype=bool)
+    skeleton_image_bot[boundary == bot_label] = True
+    skeleton_image_bot = skeletonize(skeleton_image_bot)
+
+    selected_points_top, start, end = process_slice_to_point(skeleton_image_top, interval, num_points)
+    selected_points_bottom, _, _ = process_slice_to_point(skeleton_image_bot, interval, num_points, start, end)
+
+    axes[5].imshow(tif_image, cmap='gray')
+    x_coords, y_coords = zip(*selected_points_top)
+    axes[5].scatter(x_coords, y_coords, c='red', s=1)
+    x_coords, y_coords = zip(*selected_points_bottom)
+    axes[5].scatter(x_coords, y_coords, c='green', s=1)
 
     # potential
     potential = np.ones_like(mask,  dtype=float) * 128
@@ -129,17 +168,33 @@ if __name__ == "__main__":
     colors = ['#000000', '#ffffff'] * 20
     cmap = ListedColormap(colors)
     counts = np.bincount(mask.flatten(), minlength=256)
-    plt.ion()
 
+    num_depth = 200
+    flatten_image = np.zeros((num_depth, num_points), dtype=np.uint8)
+
+    # dynamic plot (potential & flatten image)
+    plt.ion()
     for i in range(15000):
         potential = update_potential(potential, boundary_mask)
-        potential = update_mask(potential, mask, counts)
+        # potential = update_mask(potential, mask, counts)
 
         if (i%100 == 0):
             print(i)
-            axes[5].imshow(potential, cmap=cmap)
-            plt.pause(0.01)
 
+            axes[6].imshow(potential, cmap=cmap)
+
+            if (i%1000 == 0):
+                points_array = generate_2d_points_array(potential, selected_points_top, selected_points_bottom, num_depth)
+
+                for i in range(num_depth):
+                    for j in range(num_points):
+                        x, y = points_array[i, j]
+                        flatten_image[i, j] = tif_image[int(y), int(x)]
+
+                tifffile.imwrite("extracted_data.tif", flatten_image)
+                axes[7].imshow(flatten_image, cmap='gray')
+
+            plt.pause(0.01)
     plt.ioff()
 
     # show the plot

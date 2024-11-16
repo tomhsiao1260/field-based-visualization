@@ -44,9 +44,6 @@ def update_potential(potential, boundary):
     pc[:, 0]  = pc[:, 1]
     pc[:, -1] = pc[:, -2]
 
-    pc[:100, :] = 255
-    pc[-1, :] = 0
-
     pc[boundary] = potential[boundary]
     return pc
 
@@ -75,6 +72,7 @@ if __name__ == "__main__":
     # load tif image
     tif_image = tifffile.imread(tif_dir)
     tif_image = tif_image[layer]
+    tif_image = tif_image[140:600]
 
     h, w = tif_image.shape
     axes[0].imshow(tif_image, cmap='gray')
@@ -82,10 +80,11 @@ if __name__ == "__main__":
     # load boundary
     boundary, header = nrrd.read(mask_dir)
     boundary = boundary[layer]
+    boundary = boundary[140:600]
     top_label, bot_label = 3, 1
 
     # blur
-    blur_image = cv2.GaussianBlur(tif_image, (17, 17), 0)
+    blur_image = cv2.GaussianBlur(tif_image, (3, 3), 0)
     axes[1].imshow(blur_image, cmap='gray')
 
     # edge
@@ -107,6 +106,7 @@ if __name__ == "__main__":
 
     # mask
     mask = np.zeros_like(tif_image, dtype=np.uint8)
+    print('jfiwe', len(components))
 
     for i, component in enumerate(components[:255], start=1):
         for node in component: mask[node] = i
@@ -117,31 +117,23 @@ if __name__ == "__main__":
     potential = np.ones_like(mask,  dtype=float) * 128
     potential[boundary == top_label] = 255
     potential[boundary == bot_label] = 0
-    potential[:100, :] = 255
+    potential[0, :] = 255
     potential[-1, :] = 0
-
-    # gradient = np.linspace(255, 0, potential.shape[0])
-    # potential[100:, :] = gradient[100:, None] 
 
     boundary_mask = np.zeros_like(mask, dtype=bool)
     boundary_mask[boundary == top_label] = True
     boundary_mask[boundary == bot_label] = True
-    boundary_mask[:100, :] = True
+    boundary_mask[0, :] = True
     boundary_mask[-1, :] = True
 
-    plt.ion()
-    colors = ['#000000', '#ffffff'] * 50
+    colors = ['#000000', '#ffffff'] * 20
     cmap = ListedColormap(colors)
     counts = np.bincount(mask.flatten(), minlength=256)
+    plt.ion()
 
-    for i in range(20000):
+    for i in range(15000):
         potential = update_potential(potential, boundary_mask)
-
-        if (i == 5000): boundary_mask[mask > 0] = True
-
-        if (i > 5000):
-        # if (i%10 == 0):
-            potential = update_mask(potential, mask, counts)
+        potential = update_mask(potential, mask, counts)
 
         if (i%100 == 0):
             print(i)

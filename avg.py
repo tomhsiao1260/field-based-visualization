@@ -16,7 +16,7 @@ mask = np.array([
 sums = np.bincount(mask.flatten(), weights=image.flatten(), minlength=256)
 counts = np.bincount(mask.flatten(), minlength=256)
 
-# print(sums, counts)
+print(sums, counts)
 
 # 避免除以零，計算平均值
 averages = np.zeros_like(sums)

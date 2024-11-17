@@ -91,16 +91,16 @@ if __name__ == "__main__":
 
     # load tif image
     tif_image = tifffile.imread(tif_dir)
+    tif_image = tif_image[:, 140:600, :]
     tif_image = tif_image[layer]
-    tif_image = tif_image[140:600]
 
     h, w = tif_image.shape
     axes[0].imshow(tif_image, cmap='gray')
 
     # load boundary
     boundary, header = nrrd.read(mask_dir)
+    boundary = boundary[:, 140:600, :]
     boundary = boundary[layer]
-    boundary = boundary[140:600]
     top_label, bot_label = 3, 1
 
     # blur
@@ -135,16 +135,16 @@ if __name__ == "__main__":
     # extract top, bottom boundary points
     num_points, interval = 500, None
 
-    skeleton_image_top = np.zeros_like(boundary, dtype=bool)
-    skeleton_image_top[boundary == top_label] = True
-    skeleton_image_top = skeletonize(skeleton_image_top)
+    skeleton_top = np.zeros_like(boundary, dtype=bool)
+    skeleton_bot = np.zeros_like(boundary, dtype=bool)
+    skeleton_top[boundary == top_label] = True
+    skeleton_bot[boundary == bot_label] = True
 
-    skeleton_image_bot = np.zeros_like(boundary, dtype=bool)
-    skeleton_image_bot[boundary == bot_label] = True
-    skeleton_image_bot = skeletonize(skeleton_image_bot)
+    skeleton_top = skeletonize(skeleton_top)
+    skeleton_bot = skeletonize(skeleton_bot)
 
-    selected_points_top, start, end = process_slice_to_point(skeleton_image_top, interval, num_points)
-    selected_points_bottom, _, _ = process_slice_to_point(skeleton_image_bot, interval, num_points, start, end)
+    selected_points_top, start, end = process_slice_to_point(skeleton_top, interval, num_points)
+    selected_points_bottom, _, _ = process_slice_to_point(skeleton_bot, interval, num_points, start, end)
 
     axes[5].imshow(tif_image, cmap='gray')
     x_coords, y_coords = zip(*selected_points_top)
@@ -152,12 +152,25 @@ if __name__ == "__main__":
     x_coords, y_coords = zip(*selected_points_bottom)
     axes[5].scatter(x_coords, y_coords, c='green', s=1)
 
-    # potential
-    potential = np.ones_like(mask,  dtype=float) * 128
+    # potential (init)
+    potential = np.ones_like(mask, dtype=float) * 128
     potential[boundary == top_label] = 255
     potential[boundary == bot_label] = 0
-    potential[0, :] = 255
-    potential[-1, :] = 0
+
+    points_top = np.array(selected_points_top)
+    points_bottom = np.array(selected_points_bottom)
+    levels = np.linspace(255, 0, num=1000)
+
+    for pt_top, pt_bottom in zip(points_top, points_bottom):
+        # outside the boundary
+        x_top, y_top = pt_top.astype(int)
+        x_bot, y_bot = pt_bottom.astype(int)
+        potential[:y_top, x_top: x_top + 10] = 255
+        potential[y_bot:, x_bot: x_bot + 10] = 0
+
+        # inside the boundary
+        line_points = np.linspace(pt_top, pt_bottom, num=1000).astype(int)
+        for (x, y), level in zip(line_points, levels): potential[y, x] = level
 
     boundary_mask = np.zeros_like(mask, dtype=bool)
     boundary_mask[boundary == top_label] = True
@@ -167,16 +180,20 @@ if __name__ == "__main__":
 
     colors = ['#000000', '#ffffff'] * 20
     cmap = ListedColormap(colors)
-    counts = np.bincount(mask.flatten(), minlength=256)
-
-    num_depth = 200
-    flatten_image = np.zeros((num_depth, num_points), dtype=np.uint8)
+    axes[6].imshow(potential, cmap=cmap)
 
     # dynamic plot (potential & flatten image)
+    num_depth = 200
+    counts = np.bincount(mask.flatten(), minlength=256)
+    flatten_image = np.zeros((num_depth, num_points), dtype=np.uint8)
+
     plt.ion()
-    for i in range(15000):
+    for i in range(10000):
         potential = update_potential(potential, boundary_mask)
-        # potential = update_mask(potential, mask, counts)
+
+        if (i%10 == 0):
+            # boundary_mask[mask > 0] = True
+            potential = update_mask(potential, mask, counts)
 
         if (i%100 == 0):
             print(i)

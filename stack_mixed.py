@@ -2,11 +2,35 @@ import cv2
 import nrrd
 import tifffile
 import numpy as np
+import networkx as nx
 import matplotlib.pyplot as plt
 from skimage.morphology import skeletonize
 from matplotlib.colors import ListedColormap
 from app import process_slice_to_point
 from scipy.ndimage import gaussian_filter
+
+def generate_graph(skel):
+    # build the connection
+    points = np.column_stack(np.where(skel > 0))
+    G = nx.Graph()
+    for y, x in points:
+        G.add_node((y, x))
+
+        # find connection
+        for dy in [-1, 0, 1]:
+            for dx in [-1, 0, 1]:
+                if dy == 0 and dx == 0:
+                    continue
+                sy, sx = y + dy, x + dx
+                if 0 <= sy < skel.shape[0] and 0 <= sx < skel.shape[1]:
+                    if skel[sy, sx] > 0:
+                        G.add_edge((y, x), (sy, sx))
+
+    # remove small groups
+    components = [c for c in nx.connected_components(G) if len(c) >= 50]
+    G_filtered = G.subgraph(nodes for component in components for nodes in component).copy()
+
+    return G_filtered, components
 
 def update_potential_stack(potential_stack, boundary_stack):
     pc = potential_stack.copy()
@@ -106,9 +130,31 @@ if __name__ == "__main__":
 
     axes[1].imshow(edge_stack[0], cmap='gray')
 
+    # graph
+    G_list, component_list = [], []
+
+    for l in range(d):
+        print('processing graphs ', l)
+        G, components = generate_graph(skeleton_stack[l])
+        component_list.append(components)
+        G_list.append(G)
+
+    G, components = G_list[0], component_list[0]
+    pos = {node: (node[1], node[0]) for node in G.nodes}
+    colors = plt.cm.tab20(np.linspace(0, 1, len(components)))
+
+    # for component, color in zip(components, colors):
+    #     nx.draw_networkx_nodes(G, pos, nodelist=list(component), node_size=0.01, node_color=[color], ax=axes[3])
+    #     nx.draw_networkx_edges(G, pos, edgelist=G.subgraph(component).edges, edge_color=[color], ax=axes[3])
+    # axes[3].imshow(skeleton_stack[0], cmap='gray')
+
     # mask
     mask_stack = np.zeros_like(tif_stack, dtype=np.uint8)
-    mask_stack[edge_stack > 100] = 255
+    # mask_stack[edge_stack > 100] = 255
+
+    for l in range(d):
+        for i, component in enumerate(component_list[l][:255], start=1):
+            for node in component: mask_stack[l, node[0], node[1]] = i
 
     axes[2].imshow(mask_stack[0], cmap="nipy_spectral", origin="upper")
 
@@ -146,6 +192,12 @@ if __name__ == "__main__":
     points_bottom_stack = np.array(points_bottom_list)
     levels = np.linspace(255, 0, num=1000)
 
+    boundary_mask_stack = np.zeros_like(mask_stack, dtype=bool)
+    boundary_mask_stack[boundary == top_label] = True
+    boundary_mask_stack[boundary == bot_label] = True
+    boundary_mask_stack[:, 0, :] = True
+    boundary_mask_stack[:, -1, :] = True
+
     for l in range(d):
         for pt_top, pt_bottom in zip(points_top_stack[l], points_bottom_stack[l]):
             # outside the boundary
@@ -153,35 +205,41 @@ if __name__ == "__main__":
             x_bot, y_bot = pt_bottom.astype(int)
             potential_stack[l, :y_top, x_top: x_top + 10] = 255
             potential_stack[l, y_bot:, x_bot: x_bot + 10] = 0
+            boundary_mask_stack[l, :y_top, x_top: x_top + 10] = 255
+            boundary_mask_stack[l, y_bot:, x_bot: x_bot + 10] = 255
 
             # inside the boundary
             line_points = np.linspace(pt_top, pt_bottom, num=1000).astype(int)
             for (x, y), level in zip(line_points, levels): potential_stack[l, y, x] = level
-
-    boundary_mask_stack = np.zeros_like(mask_stack, dtype=bool)
-    boundary_mask_stack[boundary == top_label] = True
-    boundary_mask_stack[boundary == bot_label] = True
-    boundary_mask_stack[:, 0, :] = True
-    boundary_mask_stack[:, -1, :] = True
 
     colors = ['#000000', '#ffffff'] * 20
     cmap = ListedColormap(colors)
     axes[4].imshow(potential_stack[0], cmap=cmap)
 
     # dynamic plot (potential & flatten image)
-    # counts_stack = np.zeros((d, 256), dtype=int)
+    counts_stack = np.zeros((d, 256), dtype=int)
     num_depth = 200
     flatten_stack = np.zeros((layer, num_depth, num_points), dtype=np.uint8)
-    # for l in range(d):
-    #     counts_stack[l] = np.bincount(mask_stack[l].flatten(), minlength=256)
+    for l in range(d):
+        counts_stack[l] = np.bincount(mask_stack[l].flatten(), minlength=256)
+
+    potential_stack = tifffile.imread("potential_.tif").astype(float)
+    # nrrd.write("mask_template.nrrd", np.zeros((500, 500, 500), dtype=np.uint8))
+    data = np.zeros((500, 500, 500) , dtype=np.uint8)
 
     plt.ion()
-    for i in range(10000):
+    for i in range(2001):
+        pc = potential_stack.copy()
+
         potential_stack = update_potential_stack(potential_stack, boundary_mask_stack)
 
-        # if (i%10 == 0):
-        #     # boundary_mask_stack[mask_stack > 0] = True
-        #     potential_stack = update_mask_stack(potential_stack, mask_stack, counts_stack)
+        if (i%100 < 20):
+            if (i%100 == 0):
+                potential_stack = update_mask_stack(potential_stack, mask_stack, counts_stack)
+            else:
+                potential_stack[mask_stack > 0] = pc[mask_stack > 0]
+
+        potential_stack[boundary_mask_stack] = pc[boundary_mask_stack]
 
         if (i%10 == 0):
             print('frame ', i)
@@ -200,7 +258,10 @@ if __name__ == "__main__":
 
                 axes[6].imshow(flatten_stack[5], cmap='gray')
                 axes[7].imshow(flatten_stack[:, :, 384], cmap='gray')
-                tifffile.imwrite("extracted_data.tif", flatten_stack)
+                data[:100, :200, :500] = flatten_stack
+                tifffile.imwrite("extracted_data.tif", data)
+                nrrd.write("extracted_data.nrrd", data)
+                tifffile.imwrite("potential.tif", potential_stack.astype(np.uint8))
 
             plt.pause(0.01)
     plt.ioff()

@@ -26,12 +26,12 @@ def generate_graph(skel):
                         G.add_edge((y, x), (sy, sx))
 
     # remove small groups
-    components = [c for c in nx.connected_components(G) if len(c) >= 50]
+    components = [c for c in nx.connected_components(G) if len(c) >= 0]
     G_filtered = G.subgraph(nodes for component in components for nodes in component).copy()
 
     return G_filtered, components
 
-def update_potential(potential, boundary):
+def update_potential(potential):
     pc = potential.copy()
 
     pc[1:-1, 1:-1]  = potential[1:-1, :-2]
@@ -45,7 +45,6 @@ def update_potential(potential, boundary):
     pc[:, 0]  = pc[:, 1]
     pc[:, -1] = pc[:, -2]
 
-    pc[boundary] = potential[boundary]
     return pc
 
 def update_mask(potential, mask, counts):
@@ -57,8 +56,21 @@ def update_mask(potential, mask, counts):
     averages[nonzero] = sums[nonzero] / counts[nonzero]
 
     pc = averages[mask]
-    pc[mask == 0] = potential[mask == 0]
     return pc
+
+def resize(data, size=(100, 100)):
+    h, w = data.shape[:2]
+    rh, rw = size
+
+    sth, stw = h // rh, w // rw
+
+    resize_data = np.zeros((rh, rw), dtype=data.dtype)
+    for i in range(rh):
+        for j in range(rw):
+            window = data[i*sth:(i+1)*sth, j*stw:(j+1)*stw]
+            resize_data[i, j] = np.max(window)
+    
+    return resize_data
 
 def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
     points_top = np.array(points_top)
@@ -95,16 +107,22 @@ if __name__ == "__main__":
     tif_image = tif_image[140:600]
 
     h, w = tif_image.shape
+    tif_image = resize(tif_image, (h // 5, w // 5))
+    h, w = tif_image.shape
+
     axes[0].imshow(tif_image, cmap='gray')
 
     # load boundary
     boundary, header = nrrd.read(mask_dir)
     boundary = boundary[layer]
     boundary = boundary[140:600]
+    boundary = resize(boundary, (h, w))
     top_label, bot_label = 3, 1
 
+    print(tif_image.shape, boundary.shape)
+
     # blur
-    blur_image = cv2.GaussianBlur(tif_image, (3, 3), 0)
+    blur_image = cv2.GaussianBlur(tif_image, (7, 7), 0)
 
     # edge
     edge_image = cv2.Canny(blur_image, threshold1=99, threshold2=100)
@@ -142,17 +160,27 @@ if __name__ == "__main__":
 
     for i, component in enumerate(components[:255], start=1):
         for node in component: mask[node] = i
+    mask[boundary == top_label] = top_label
+    mask[boundary == bot_label] = bot_label
 
     axes[3].imshow(mask, cmap="nipy_spectral", origin="upper")
 
     # potential
-    potential = np.ones_like(mask,  dtype=float) * 128
-    potential[boundary == top_label] = 255
-    potential[boundary == bot_label] = 0
+    # potential = np.ones_like(mask,  dtype=float) * 128
+    # potential[boundary == top_label] = 255
+    # potential[boundary == bot_label] = 0
+
+    # boundary_mask = np.zeros_like(mask, dtype=bool)
+    # boundary_mask[boundary == top_label] = True
+    # boundary_mask[boundary == bot_label] = True
+    # boundary_mask[0, :] = True
+    # boundary_mask[-1, :] = True
+
+    potential = np.zeros_like(mask,  dtype=float)
+    potential[0, :] = 255
+    potential[-1, :] = 0
 
     boundary_mask = np.zeros_like(mask, dtype=bool)
-    boundary_mask[boundary == top_label] = True
-    boundary_mask[boundary == bot_label] = True
     boundary_mask[0, :] = True
     boundary_mask[-1, :] = True
 
@@ -160,39 +188,45 @@ if __name__ == "__main__":
     points_bottom = np.array(selected_points_bottom)
     levels = np.linspace(255, 0, num=1000)
 
-    for pt_top, pt_bottom in zip(points_top, points_bottom):
-        # outside the boundary
-        x_top, y_top = pt_top.astype(int)
-        x_bot, y_bot = pt_bottom.astype(int)
+    # for pt_top, pt_bottom in zip(points_top, points_bottom):
+    #     # outside the boundary
+    #     x_top, y_top = pt_top.astype(int)
+    #     x_bot, y_bot = pt_bottom.astype(int)
 
-        potential[:y_top, x_top: x_top + 10] = 255
-        potential[y_bot:, x_bot: x_bot + 10] = 0
-        boundary_mask[:y_top, x_top: x_top + 10] = True
-        boundary_mask[y_bot:, x_bot: x_bot + 10] = True
+    #     potential[:y_top, x_top: x_top + 10] = 255
+    #     potential[y_bot:, x_bot: x_bot + 10] = 0
+    #     boundary_mask[:y_top, x_top: x_top + 10] = True
+    #     boundary_mask[y_bot:, x_bot: x_bot + 10] = True
 
-        # inside the boundary
-        line_points = np.linspace(pt_top, pt_bottom, num=1000).astype(int)
-        for (x, y), level in zip(line_points, levels): potential[y, x] = level
+    #     # inside the boundary
+    #     line_points = np.linspace(pt_top, pt_bottom, num=1000).astype(int)
+    #     for (x, y), level in zip(line_points, levels): potential[y, x] = level
 
     colors = ['#000000', '#ffffff'] * 20
     cmap = ListedColormap(colors)
     plt.ion()
 
     # dynamic plot (potential & flatten image)
-    num_depth = 200
+    num_depth, num_points = h, w
+    # num_depth = 200
     flatten_image = np.zeros((num_depth, num_points), dtype=np.uint8)
     counts = np.bincount(mask.flatten(), minlength=256)
 
-    for i in range(12000):
-        pc = potential.copy()
+    for i in range(10000):
+        pc = update_potential(potential)
+        pc[boundary_mask] = potential[boundary_mask]
 
-        potential = update_potential(potential, boundary_mask)
+        pcm = update_mask(pc, mask, counts)
+        pcm[mask <= 0] = pc[mask <= 0]
+        pcm[boundary_mask] = pc[boundary_mask]
 
-        if (2000 < i < 3000 or 3500 < i < 5000 or 5500 < i < 7000 or 7500 < i < 9000 or 9500 < i < 11000):
-            if (i%10 == 0):
-                potential = update_mask(potential, mask, counts)
-            else:
-                potential[mask > 0] = pc[mask > 0]
+        potential = pcm
+
+        # if (2000 < i < 3000 or 3500 < i < 5000 or 5500 < i < 7000 or 7500 < i < 9000 or 9500 < i < 11000):
+        #     if (i%10 == 0):
+        #         potential = update_mask(potential, mask, counts)
+        #     else:
+        #         potential[mask > 0] = pc[mask > 0]
 
 
         if (i%100 == 0):

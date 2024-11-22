@@ -5,6 +5,20 @@ from skimage.morphology import skeletonize
 from matplotlib.colors import ListedColormap
 from scipy.ndimage import convolve
 
+def resize(data, size=(100, 100)):
+    h, w = data.shape[:2]
+    rh, rw = size
+
+    sth, stw = h // rh, w // rw
+
+    resize_data = np.zeros((rh, rw), dtype=data.dtype)
+    for i in range(rh):
+        for j in range(rw):
+            window = data[i*sth:(i+1)*sth, j*stw:(j+1)*stw]
+            resize_data[i, j] = np.max(window)
+    
+    return resize_data
+
 def update_potential(potential):
     pc = potential.copy()
 
@@ -55,15 +69,28 @@ if __name__ == '__main__':
     # load boundary
     boundary, header = nrrd.read(mask_dir)
     boundary = boundary[layer]
-    boundary = boundary[140:600]
+    boundary = boundary[0:600]
 
     top_label, bot_label = 3, 1
+    h, w = boundary.shape
+    boundary = resize(boundary, (h // 5, w // 5))
     h, w = boundary.shape
 
     # mask
     mask = np.zeros_like(boundary, dtype=np.uint8)
 
-    mask[boundary == top_label] = top_label
+    mask_temp_top = np.zeros_like(boundary, dtype=bool)
+    mask_temp_top[boundary == top_label] = True
+    mask_temp_top = skeletonize(mask_temp_top)
+
+    mask_temp_bot = np.zeros_like(boundary, dtype=bool)
+    mask_temp_bot[boundary == bot_label] = True
+    mask_temp_bot = skeletonize(mask_temp_bot)
+
+    mask[mask_temp_top] = top_label
+    mask[mask_temp_bot] = bot_label
+
+    # mask[boundary == top_label] = top_label
     # mask[boundary == bot_label] = bot_label
 
     mask_plot = np.zeros_like(mask, dtype=np.uint8)
@@ -71,17 +98,17 @@ if __name__ == '__main__':
     axes[0].imshow(mask_plot, cmap='gray')
 
     # potential
-    potential = np.zeros_like(mask,  dtype=float)
+    potential = np.zeros_like(mask, dtype=float)
 
     for i in range(h): potential[i, :] = (i / h) * 255
-    potential[:10, :] = 255
-    potential[-10:, :] = 0
+    potential[:5, :] = 255
+    potential[-5:, :] = 0
 
     boundary_mask = np.zeros_like(mask, dtype=bool)
-    boundary_mask[:10, :] = True
-    boundary_mask[-10, :] = True
+    boundary_mask[:5, :] = True
+    boundary_mask[-5, :] = True
 
-    colors = ['#000000', '#ffffff'] * 20
+    colors = ['#000000', '#ffffff'] * 10
     cmap = ListedColormap(colors)
     counts = np.bincount(mask.flatten(), minlength=256)
 
@@ -90,14 +117,12 @@ if __name__ == '__main__':
     # update potential
     plt.ion()
 
-    for i in range(12000):
-        pc = potential.copy()
-
-        pc = update_potential(pc)
+    for i in range(10000):
+        pc = update_potential(potential)
         pc[boundary_mask] = potential[boundary_mask]
 
-        # pcm = update_mask(pc, mask, counts)
-        pcm = update_mask_potential(pc, mask)
+        pcm = update_mask(pc, mask, counts)
+        # pcm = update_mask_potential(pc, mask)
 
         pcm[mask <= 0] = pc[mask <= 0]
         pcm[boundary_mask] = pc[boundary_mask]

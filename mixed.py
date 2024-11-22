@@ -151,23 +151,14 @@ if __name__ == "__main__":
 
     plt.ion()
     for i in range(10001):
-        pc = potential.copy()
-
-        pc = update_potential(pc)
+        pc = update_potential(potential)
         pc[boundary_mask] = potential[boundary_mask]
 
-        if (i > 2000 and i%1000 < 900 and i%1000 != 0):
-            pc[mask > 0] = potential[mask > 0]
+        pcm = update_mask(pc, mask, kernel_size=3)
+        pcm[mask <= 0] = potential[mask <= 0]
+        pcm[boundary_mask] = pc[boundary_mask]
 
-        potential = pc
-
-        pc = potential.copy()
-
-        pc = update_mask(pc, mask, kernel_size=3)
-        pc[mask <= 0] = potential[mask <= 0]
-        pc[boundary_mask] = potential[boundary_mask]
-
-        potential = pc
+        potential = pcm
 
         if (i%100 == 0):
             print(i)

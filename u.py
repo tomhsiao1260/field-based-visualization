@@ -7,49 +7,28 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import convolve
 from matplotlib.colors import ListedColormap
 from skimage.morphology import skeletonize
-from skimage.morphology import skeletonize_3d
 from scipy.ndimage import gaussian_filter
-
-# def down_sampling(array, factor, mean=True):
-#     nz, ny, nx = array.shape
-#     tz = (nz // factor) * factor
-#     ty = (ny // factor) * factor
-#     tx = (nx // factor) * factor
-#     trimmed_array = array[:tz, :ty, :tx]
-
-#     if (mean):
-#         downscaled = trimmed_array.reshape(
-#             tz // factor, factor,
-#             ty // factor, factor,
-#             tx // factor, factor
-#         ).mean(axis=(1, 3, 5)).astype(array.dtype)
-#     else:
-#         downscaled = np.median(
-#             trimmed_array.reshape(
-#                 tz // factor, factor,
-#                 ty // factor, factor,
-#                 tx // factor, factor
-#             ),axis=(1, 3, 5)
-#         ).astype(array.dtype)
-
-#     return downscaled
 
 def down_sampling(array, factor, mean=True):
     nz, ny, nx = array.shape
+    tz = (nz // factor) * factor
     ty = (ny // factor) * factor
     tx = (nx // factor) * factor
-    trimmed_array = array[:, :ty, :tx]
+    trimmed_array = array[:tz, :ty, :tx]
+    # trimmed_array = array[:, :ty, :tx]
 
     if (mean):
         downscaled = trimmed_array.reshape(
-            nz, 1,
+            # nz, 1,
+            tz // factor, factor,
             ty // factor, factor,
             tx // factor, factor
         ).mean(axis=(1, 3, 5)).astype(array.dtype)
     else:
         downscaled = np.max(
             trimmed_array.reshape(
-                nz, 1,
+                # nz, 1,
+                tz // factor, factor,
                 ty // factor, factor,
                 tx // factor, factor
             ),axis=(1, 3, 5)
@@ -87,16 +66,16 @@ def update_potential_stack(potential_stack):
     pc[:, 1:-1, 1:-1] += potential_stack[:, 1:-1,   2:]
     pc[:, 1:-1, 1:-1] += potential_stack[:,  :-2, 1:-1]
     pc[:, 1:-1, 1:-1] += potential_stack[:,   2:, 1:-1]
-    # pc[1:-1, 1:-1, 1:-1] += potential_stack[ :-2, 1:-1, 1:-1]
-    # pc[1:-1, 1:-1, 1:-1] += potential_stack[  2:, 1:-1, 1:-1]
-    pc[:, 1:-1, 1:-1] /= 4
+    pc[1:-1, 1:-1, 1:-1] += potential_stack[ :-2, 1:-1, 1:-1]
+    pc[1:-1, 1:-1, 1:-1] += potential_stack[  2:, 1:-1, 1:-1]
+    pc[:, 1:-1, 1:-1] /= 6
 
     pc[ :,  :,  0] = pc[ :,  :,  1]
     pc[ :,  :, -1] = pc[ :,  :, -2]
     pc[ :,  0,  :] = pc[ :,  1,  :]
     pc[ :, -1,  :] = pc[ :, -2,  :]
-    # pc[ 0,  :,  :] = pc[ 1,  :,  :]
-    # pc[-1,  :,  :] = pc[-2,  :,  :]
+    pc[ 0,  :,  :] = pc[ 1,  :,  :]
+    pc[-1,  :,  :] = pc[-2,  :,  :]
 
     return pc
 
@@ -144,8 +123,8 @@ if __name__ == "__main__":
 
     # load tif stack
     tif_stack_origin = tifffile.imread(tif_dir)
-    # tif_stack_origin = tif_stack_origin[:2, :, :]
-    tif_stack_origin = tif_stack_origin[:2, 140:600, :]
+    # tif_stack_origin = tif_stack_origin[:50, :, :]
+    # tif_stack_origin = tif_stack_origin[:2, 140:600, :]
     tif_stack = down_sampling(tif_stack_origin, factor)
 
     d, h, w = tif_stack.shape
@@ -155,8 +134,8 @@ if __name__ == "__main__":
 
     # load & smooth boundary
     boundary, header = nrrd.read(mask_dir)
-    # boundary = boundary[:2, :, :]
-    boundary = boundary[:2, 140:600, :]
+    # boundary = boundary[:50, :, :]
+    # boundary = boundary[:2, 140:600, :]
     boundary_temp = np.zeros_like(boundary)
     top_label, bot_label = 3, 1
 
@@ -164,9 +143,11 @@ if __name__ == "__main__":
         print('Processing label:', label)
         mask_label = (boundary == label).astype(np.uint8)
         smoothed = gaussian_filter(mask_label.astype(float), sigma=[5, 5, 5])
-        skeleton = skeletonize_3d(smoothed > 0.5)
-        boundary_temp[smoothed > 0.5] = label
-        # boundary_temp[skeleton] = label
+        # boundary_temp[smoothed > 0.5] = label
+
+        for i in range(d):
+            skeleton = skeletonize(smoothed[i] > 0.5)
+            boundary_temp[i][skeleton] = label
 
     boundary = boundary_temp
     boundary = down_sampling(boundary, factor, False)
@@ -211,7 +192,7 @@ if __name__ == "__main__":
 
     mask_stack[boundary == top_label] = top_label
     mask_stack[boundary == bot_label] = bot_label
-    # mask_stack[:, :110//factor, :] = 0
+    mask_stack[:, :110//factor, :] = 0
 
     axes[3].imshow(mask_stack[d//2], cmap="nipy_spectral", origin="upper")
 
@@ -238,20 +219,23 @@ if __name__ == "__main__":
 
     # potential_stack = tifffile.imread("potential_.tif").astype(float)
     nrrd.write("mask_template.nrrd", np.zeros((d0, h0, w0), dtype=np.uint8))
+    top_level, bot_level = 180, 100
 
     plt.ion()
     for i in range(1000):
+        potential_stack[boundary == top_label] = top_level
+        potential_stack[boundary == bot_label] = bot_level
+
         pc = update_potential_stack(potential_stack)
         pc[boundary_mask_stack] = potential_stack[boundary_mask_stack]
+        pc[boundary > 0] = potential_stack[boundary > 0]
 
         pcm = update_mask_stack(pc, mask_stack, counts_stack)
         pcm[mask_stack <= 0] = pc[mask_stack <= 0]
         pcm[boundary_mask_stack] = pc[boundary_mask_stack]
+        pcm[boundary > 0] = pc[boundary > 0]
 
         potential_stack = pcm
-
-        potential_stack[boundary == top_label] = 200
-        potential_stack[boundary == bot_label] = 50
 
         if (i%10 == 0):
             print('frame ', i)
@@ -273,6 +257,8 @@ if __name__ == "__main__":
                     map_y = cv2.resize(map_y, (w0, h0), interpolation=cv2.INTER_LINEAR)
 
                     flatten_stack[z] = cv2.remap(tif_stack_origin[z], map_x, map_y, interpolation=cv2.INTER_LINEAR)
+                    flatten_stack[z, :(h0 * (255 - top_level) // 255), :] = 0
+                    flatten_stack[z, (h0 * (255 - bot_level) // 255):, :] = 0
 
                 axes[6].imshow(flatten_stack[d0//2], cmap="gray")
                 axes[7].imshow(flatten_stack[:, :, w0//2], cmap='gray')

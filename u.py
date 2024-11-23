@@ -4,27 +4,52 @@ import tifffile
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
+from scipy.ndimage import convolve
 from matplotlib.colors import ListedColormap
 from skimage.morphology import skeletonize
+from skimage.morphology import skeletonize_3d
 from scipy.ndimage import gaussian_filter
+
+# def down_sampling(array, factor, mean=True):
+#     nz, ny, nx = array.shape
+#     tz = (nz // factor) * factor
+#     ty = (ny // factor) * factor
+#     tx = (nx // factor) * factor
+#     trimmed_array = array[:tz, :ty, :tx]
+
+#     if (mean):
+#         downscaled = trimmed_array.reshape(
+#             tz // factor, factor,
+#             ty // factor, factor,
+#             tx // factor, factor
+#         ).mean(axis=(1, 3, 5)).astype(array.dtype)
+#     else:
+#         downscaled = np.median(
+#             trimmed_array.reshape(
+#                 tz // factor, factor,
+#                 ty // factor, factor,
+#                 tx // factor, factor
+#             ),axis=(1, 3, 5)
+#         ).astype(array.dtype)
+
+#     return downscaled
 
 def down_sampling(array, factor, mean=True):
     nz, ny, nx = array.shape
-    tz = (nz // factor) * factor
     ty = (ny // factor) * factor
     tx = (nx // factor) * factor
-    trimmed_array = array[:tz, :ty, :tx]
+    trimmed_array = array[:, :ty, :tx]
 
     if (mean):
         downscaled = trimmed_array.reshape(
-            tz // factor, factor,
+            nz, 1,
             ty // factor, factor,
             tx // factor, factor
         ).mean(axis=(1, 3, 5)).astype(array.dtype)
     else:
-        downscaled = np.median(
+        downscaled = np.max(
             trimmed_array.reshape(
-                tz // factor, factor,
+                nz, 1,
                 ty // factor, factor,
                 tx // factor, factor
             ),axis=(1, 3, 5)
@@ -50,7 +75,7 @@ def generate_graph(skel):
                         G.add_edge((y, x), (sy, sx))
 
     # remove small groups
-    components = [c for c in nx.connected_components(G) if len(c) >= 2]
+    components = [c for c in nx.connected_components(G) if len(c) >= 0]
     G_filtered = G.subgraph(nodes for component in components for nodes in component).copy()
 
     return G_filtered, components
@@ -58,20 +83,20 @@ def generate_graph(skel):
 def update_potential_stack(potential_stack):
     pc = potential_stack.copy()
 
-    pc[1:-1, 1:-1, 1:-1]  = potential_stack[1:-1, 1:-1,  :-2]
-    pc[1:-1, 1:-1, 1:-1] += potential_stack[1:-1, 1:-1,   2:]
-    pc[1:-1, 1:-1, 1:-1] += potential_stack[1:-1,  :-2, 1:-1]
-    pc[1:-1, 1:-1, 1:-1] += potential_stack[1:-1,   2:, 1:-1]
-    pc[1:-1, 1:-1, 1:-1] += potential_stack[ :-2, 1:-1, 1:-1]
-    pc[1:-1, 1:-1, 1:-1] += potential_stack[  2:, 1:-1, 1:-1]
-    pc[1:-1, 1:-1, 1:-1] /= 6
+    pc[:, 1:-1, 1:-1]  = potential_stack[:, 1:-1,  :-2]
+    pc[:, 1:-1, 1:-1] += potential_stack[:, 1:-1,   2:]
+    pc[:, 1:-1, 1:-1] += potential_stack[:,  :-2, 1:-1]
+    pc[:, 1:-1, 1:-1] += potential_stack[:,   2:, 1:-1]
+    # pc[1:-1, 1:-1, 1:-1] += potential_stack[ :-2, 1:-1, 1:-1]
+    # pc[1:-1, 1:-1, 1:-1] += potential_stack[  2:, 1:-1, 1:-1]
+    pc[:, 1:-1, 1:-1] /= 4
 
     pc[ :,  :,  0] = pc[ :,  :,  1]
     pc[ :,  :, -1] = pc[ :,  :, -2]
     pc[ :,  0,  :] = pc[ :,  1,  :]
     pc[ :, -1,  :] = pc[ :, -2,  :]
-    pc[ 0,  :,  :] = pc[ 1,  :,  :]
-    pc[-1,  :,  :] = pc[-2,  :,  :]
+    # pc[ 0,  :,  :] = pc[ 1,  :,  :]
+    # pc[-1,  :,  :] = pc[-2,  :,  :]
 
     return pc
 
@@ -107,7 +132,7 @@ def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
     return points_array
 
 if __name__ == "__main__":
-    z, y, x, layer, factor = 3513, 1900, 3400, 100, 8
+    z, y, x, layer, factor = 3513, 1900, 3400, 100, 5
     tif_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_volume.tif'
     mask_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_mask.nrrd'
 
@@ -119,7 +144,8 @@ if __name__ == "__main__":
 
     # load tif stack
     tif_stack_origin = tifffile.imread(tif_dir)
-    # tif_stack_origin = tif_stack_origin[:, 140:600, :]
+    # tif_stack_origin = tif_stack_origin[:2, :, :]
+    tif_stack_origin = tif_stack_origin[:2, 140:600, :]
     tif_stack = down_sampling(tif_stack_origin, factor)
 
     d, h, w = tif_stack.shape
@@ -129,15 +155,18 @@ if __name__ == "__main__":
 
     # load & smooth boundary
     boundary, header = nrrd.read(mask_dir)
-    # boundary = boundary[:, 140:600, :]
+    # boundary = boundary[:2, :, :]
+    boundary = boundary[:2, 140:600, :]
     boundary_temp = np.zeros_like(boundary)
     top_label, bot_label = 3, 1
 
     for label in [top_label, bot_label]:
-        print('blur label ', label)
-        mask_label = np.where(boundary == label, 1, 0).astype(float)
-        smoothed = gaussian_filter(mask_label, sigma=[5, 5, 5])
+        print('Processing label:', label)
+        mask_label = (boundary == label).astype(np.uint8)
+        smoothed = gaussian_filter(mask_label.astype(float), sigma=[5, 5, 5])
+        skeleton = skeletonize_3d(smoothed > 0.5)
         boundary_temp[smoothed > 0.5] = label
+        # boundary_temp[skeleton] = label
 
     boundary = boundary_temp
     boundary = down_sampling(boundary, factor, False)
@@ -148,7 +177,7 @@ if __name__ == "__main__":
     skeleton_stack = np.zeros_like(tif_stack, dtype=bool)
 
     for l in range(d):
-        blur_stack[l] = cv2.GaussianBlur(tif_stack[l], (5, 5), 0)
+        blur_stack[l] = cv2.GaussianBlur(tif_stack[l], (7, 7), 0)
         edge_stack[l] = cv2.Canny(blur_stack[l], threshold1=90, threshold2=100)
         skeleton_stack[l] = skeletonize(edge_stack[l])
 
@@ -177,23 +206,24 @@ if __name__ == "__main__":
 
     for l in range(d):
         for i, component in enumerate(component_list[l][:255], start=1):
+            if (i == top_label or i == bot_label): continue
             for node in component: mask_stack[l, node[0], node[1]] = i
 
     mask_stack[boundary == top_label] = top_label
     mask_stack[boundary == bot_label] = bot_label
-    mask_stack[:, :110//factor, :] = 0
+    # mask_stack[:, :110//factor, :] = 0
 
     axes[3].imshow(mask_stack[d//2], cmap="nipy_spectral", origin="upper")
 
     # potential (init)
     potential_stack = np.zeros_like(mask_stack, dtype=float)
     for y in range(h): potential_stack[:, y, :] = (1 - (y / h)) * 255
-    potential_stack[:, :5, :] = 255
-    potential_stack[:, -5:, :] = 0
+    potential_stack[:, :1, :] = 255
+    potential_stack[:, -1:, :] = 0
 
     boundary_mask_stack = np.zeros_like(mask_stack, dtype=bool)
-    boundary_mask_stack[:, :5, :] = True
-    boundary_mask_stack[:, -5:, :] = True
+    boundary_mask_stack[:, :1, :] = True
+    boundary_mask_stack[:, -1:, :] = True
 
     axes[4].imshow(potential_stack[d//2], cmap='gray')
 
@@ -210,7 +240,7 @@ if __name__ == "__main__":
     nrrd.write("mask_template.nrrd", np.zeros((d0, h0, w0), dtype=np.uint8))
 
     plt.ion()
-    for i in range(2000):
+    for i in range(1000):
         pc = update_potential_stack(potential_stack)
         pc[boundary_mask_stack] = potential_stack[boundary_mask_stack]
 

@@ -69,7 +69,6 @@ if __name__ == '__main__':
     # load boundary
     boundary, header = nrrd.read(mask_dir)
     boundary = boundary[layer]
-    boundary = boundary[0:600]
 
     top_label, bot_label = 3, 1
     h, w = boundary.shape
@@ -90,9 +89,6 @@ if __name__ == '__main__':
     mask[mask_temp_top] = top_label
     mask[mask_temp_bot] = bot_label
 
-    # mask[boundary == top_label] = top_label
-    # mask[boundary == bot_label] = bot_label
-
     mask_plot = np.zeros_like(mask, dtype=np.uint8)
     mask_plot[mask > 0] =  255
     axes[0].imshow(mask_plot, cmap='gray')
@@ -100,7 +96,7 @@ if __name__ == '__main__':
     # potential
     potential = np.zeros_like(mask, dtype=float)
 
-    for i in range(h): potential[i, :] = (i / h) * 255
+    for i in range(h): potential[i, :] = (1 - (i / h)) * 255
     potential[:5, :] = 255
     potential[-5:, :] = 0
 
@@ -108,7 +104,7 @@ if __name__ == '__main__':
     boundary_mask[:5, :] = True
     boundary_mask[-5, :] = True
 
-    colors = ['#000000', '#ffffff'] * 10
+    colors = ['#000000', '#ffffff'] * 20
     cmap = ListedColormap(colors)
     counts = np.bincount(mask.flatten(), minlength=256)
 

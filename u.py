@@ -54,21 +54,22 @@ def generate_graph(skel):
                         G.add_edge((y, x), (sy, sx))
 
     # remove small groups
-    components = [c for c in nx.connected_components(G) if len(c) >= 0]
+    components = [c for c in nx.connected_components(G) if len(c) >= 3]
     G_filtered = G.subgraph(nodes for component in components for nodes in component).copy()
 
     return G_filtered, components
 
 def update_potential_stack(potential_stack):
     pc = potential_stack.copy()
+    g = 5
 
-    pc[:, 1:-1, 1:-1]  = potential_stack[:, 1:-1,  :-2]
-    pc[:, 1:-1, 1:-1] += potential_stack[:, 1:-1,   2:]
-    pc[:, 1:-1, 1:-1] += potential_stack[:,  :-2, 1:-1]
-    pc[:, 1:-1, 1:-1] += potential_stack[:,   2:, 1:-1]
+    pc[1:-1, 1:-1, 1:-1]  = potential_stack[1:-1, 1:-1,  :-2]
+    pc[1:-1, 1:-1, 1:-1] += potential_stack[1:-1, 1:-1,   2:]
+    pc[1:-1, 1:-1, 1:-1] += potential_stack[1:-1,  :-2, 1:-1]
+    pc[1:-1, 1:-1, 1:-1] += potential_stack[1:-1,   2:, 1:-1]
     pc[1:-1, 1:-1, 1:-1] += potential_stack[ :-2, 1:-1, 1:-1]
     pc[1:-1, 1:-1, 1:-1] += potential_stack[  2:, 1:-1, 1:-1]
-    pc[:, 1:-1, 1:-1] /= 6
+    pc[1:-1, 1:-1, 1:-1] /= 6
 
     pc[ :,  :,  0] = pc[ :,  :,  1]
     pc[ :,  :, -1] = pc[ :,  :, -2]
@@ -79,18 +80,57 @@ def update_potential_stack(potential_stack):
 
     return pc
 
-def update_mask_stack(potential_stack, mask_stack, counts_stack):
+def update_mask_stack(potential_stack, mask_stack, counts_stack, axis=0):
     pc = potential_stack.copy()
-    d = potential_stack.shape[0]
+    d = potential_stack.shape[axis]
 
     for l in range(d):
-        sums = np.bincount(mask_stack[l].flatten(), weights=pc[l].flatten(), minlength=256)
+        counts = counts_stack[l]
+
+        if (axis == 0):
+            mask = mask_stack[l, :, :]
+            p = pc[l, :, :]
+        elif (axis == 1):
+            mask = mask_stack[:, l, :]
+            p = pc[:, l, :]
+        else:
+            mask = mask_stack[:, :, l]
+            p = pc[:, :, l]
+
+        sums = np.bincount(mask.flatten(), weights=p.flatten(), minlength=256)
         averages = np.zeros_like(sums)
-        nonzero = counts_stack[l] > 0
-        averages[nonzero] = sums[nonzero] / counts_stack[l][nonzero]
-        pc[l] = averages[mask_stack[l]]
+        nonzero = counts > 0
+        averages[nonzero] = sums[nonzero] / counts[nonzero]
+
+        if (axis == 0):
+            pc[l, :, :] = averages[mask]
+        elif (axis == 1):
+            pc[:, l, :] = averages[mask]
+        else:
+            pc[:, :, l] = averages[mask]
 
     return pc
+
+def generate_mask_stack(skeleton_stack):
+    d, h, w = skeleton_stack.shape
+
+    # graph
+    G_list, component_list = [], []
+
+    for z in range(d):
+        print('processing graphs ', z)
+        G, components = generate_graph(skeleton_stack[z, :, :])
+        component_list.append(components)
+        G_list.append(G)
+
+    # mask
+    mask_stack = np.zeros_like(skeleton_stack, dtype=np.uint8)
+
+    for z in range(d):
+        for i, component in enumerate(component_list[z][:255], start=1):
+            for node in component: mask_stack[z, node[0], node[1]] = i
+
+    return mask_stack
 
 def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
     points_top = np.array(points_top)
@@ -116,134 +156,137 @@ if __name__ == "__main__":
     mask_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_mask.nrrd'
 
     # plot init
-    fig, axes = plt.subplots(3, 3, figsize=(7, 5))
+    fig, axes = plt.subplots(2, 5, figsize=(7, 3))
 
     axes = axes.ravel()
     for ax in axes: ax.axis('off')
 
     # load tif stack
     tif_stack_origin = tifffile.imread(tif_dir)
-    # tif_stack_origin = tif_stack_origin[:50, :, :]
+    # tif_stack_origin = tif_stack_origin[:2, :, :]
     # tif_stack_origin = tif_stack_origin[:2, 140:600, :]
     tif_stack = down_sampling(tif_stack_origin, factor)
 
     d, h, w = tif_stack.shape
     d0, h0, w0 = tif_stack_origin.shape
 
-    axes[0].imshow(tif_stack[d//2], cmap='gray')
+    axes[0].imshow(tif_stack[d//2, :, :], cmap='gray')
+    axes[5].imshow(tif_stack[:, :, w//2], cmap='gray')
 
     # load & smooth boundary
-    boundary, header = nrrd.read(mask_dir)
-    # boundary = boundary[:50, :, :]
-    # boundary = boundary[:2, 140:600, :]
-    boundary_temp = np.zeros_like(boundary)
     top_label, bot_label = 3, 1
+
+    boundary, header = nrrd.read(mask_dir)
+    # boundary = boundary[:2, :, :]
+    # boundary = boundary[:2, 140:600, :]
+    boundary = down_sampling(boundary, factor, False)
+    boundary_temp = np.zeros_like(boundary)
 
     for label in [top_label, bot_label]:
         print('Processing label:', label)
         mask_label = (boundary == label).astype(np.uint8)
-        smoothed = gaussian_filter(mask_label.astype(float), sigma=[5, 5, 5])
-        # boundary_temp[smoothed > 0.5] = label
+        # smoothed = gaussian_filter(mask_label.astype(float), sigma=[5, 5, 5])
 
-        for i in range(d):
-            skeleton = skeletonize(smoothed[i] > 0.5)
-            boundary_temp[i][skeleton] = label
+        for z in range(d):
+            # skeleton = skeletonize(smoothed[z] > 0.5)
+            skeleton = skeletonize(mask_label[z])
+            boundary_temp[z][skeleton] = label
 
     boundary = boundary_temp
-    boundary = down_sampling(boundary, factor, False)
 
     # blur & edge & skeleton
-    blur_stack = np.zeros_like(tif_stack)
-    edge_stack = np.zeros_like(tif_stack)
-    skeleton_stack = np.zeros_like(tif_stack, dtype=bool)
+    blur_stack_z = np.zeros_like(tif_stack)
+    edge_stack_z = np.zeros_like(tif_stack)
+    skeleton_stack_z = np.zeros_like(tif_stack, dtype=bool)
 
-    for l in range(d):
-        blur_stack[l] = cv2.GaussianBlur(tif_stack[l], (7, 7), 0)
-        edge_stack[l] = cv2.Canny(blur_stack[l], threshold1=90, threshold2=100)
-        skeleton_stack[l] = skeletonize(edge_stack[l])
+    for z in range(d):
+        blur_stack_z[z, :, :] = cv2.GaussianBlur(tif_stack[z, :, :], (7, 7), 0)
+        edge_stack_z[z, :, :] = cv2.Canny(blur_stack_z[z, :, :], threshold1=90, threshold2=100)
+        skeleton_stack_z[z, :, :] = skeletonize(edge_stack_z[z, : , :])
 
-    axes[1].imshow(blur_stack[d//2], cmap='gray')
+    blur_stack_x = np.zeros_like(tif_stack)
+    edge_stack_x = np.zeros_like(tif_stack)
+    skeleton_stack_x = np.zeros_like(tif_stack, dtype=bool)
 
-    # graph
-    G_list, component_list = [], []
+    for x in range(w):
+        blur_stack_x[:, :, x] = cv2.GaussianBlur(tif_stack[:, :, x], (7, 7), 0)
+        edge_stack_x[:, :, x] = cv2.Canny(blur_stack_x[:, :, x], threshold1=90, threshold2=100)
+        skeleton_stack_x[:, :, x] = skeletonize(edge_stack_x[:, :, x])
 
-    for l in range(d):
-        print('processing graphs ', l)
-        G, components = generate_graph(skeleton_stack[l])
-        component_list.append(components)
-        G_list.append(G)
-
-    G, components = G_list[d//2], component_list[d//2]
-    pos = {node: (node[1], node[0]) for node in G.nodes}
-    colors = plt.cm.tab20(np.linspace(0, 1, len(components)))
-
-    for component, color in zip(components, colors):
-        nx.draw_networkx_nodes(G, pos, nodelist=list(component), node_size=0.01, node_color=[color], ax=axes[2])
-        nx.draw_networkx_edges(G, pos, edgelist=G.subgraph(component).edges, edge_color=[color], ax=axes[2])
-    axes[2].imshow(skeleton_stack[d//2], cmap='gray')
+    axes[1].imshow(blur_stack_z[d//2, :, :], cmap='gray')
+    axes[6].imshow(blur_stack_x[:, :, w//2], cmap='gray')
 
     # mask
-    mask_stack = np.zeros_like(tif_stack, dtype=np.uint8)
+    mask_stack_z = generate_mask_stack(skeleton_stack_z)
+    mask_stack_z[:, :110//factor, :] = 0
 
-    for l in range(d):
-        for i, component in enumerate(component_list[l][:255], start=1):
-            if (i == top_label or i == bot_label): continue
-            for node in component: mask_stack[l, node[0], node[1]] = i
+    s = skeleton_stack_x.transpose(2, 1, 0)
+    mask_stack_x = generate_mask_stack(s)
+    mask_stack_x = mask_stack_x.transpose(2, 1, 0)
+    mask_stack_x[:, :110//factor, :] = 0
 
-    mask_stack[boundary == top_label] = top_label
-    mask_stack[boundary == bot_label] = bot_label
-    mask_stack[:, :110//factor, :] = 0
-
-    axes[3].imshow(mask_stack[d//2], cmap="nipy_spectral", origin="upper")
+    axes[2].imshow(mask_stack_z[d//2, :, :], cmap="nipy_spectral", origin="upper")
+    axes[7].imshow(mask_stack_x[:, :, w//2], cmap="nipy_spectral", origin="upper")
 
     # potential (init)
-    potential_stack = np.zeros_like(mask_stack, dtype=float)
+    potential_stack = np.zeros_like(mask_stack_z, dtype=float)
     for y in range(h): potential_stack[:, y, :] = (1 - (y / h)) * 255
     potential_stack[:, :1, :] = 255
     potential_stack[:, -1:, :] = 0
 
-    boundary_mask_stack = np.zeros_like(mask_stack, dtype=bool)
+    boundary_mask_stack = np.zeros_like(mask_stack_z, dtype=bool)
     boundary_mask_stack[:, :1, :] = True
     boundary_mask_stack[:, -1:, :] = True
-
-    axes[4].imshow(potential_stack[d//2], cmap='gray')
 
     # update potential
     flatten_stack = np.zeros((d0, h0, w0), dtype=np.uint8)
     colors = ['#000000', '#ffffff'] * 20
     cmap = ListedColormap(colors)
 
-    counts_stack = np.zeros((d, 256), dtype=int)
-    for l in range(d):
-        counts_stack[l] = np.bincount(mask_stack[l].flatten(), minlength=256)
+    counts_stack_z = np.zeros((d, 256), dtype=int)
+    for z in range(d):
+        counts_stack_z[z] = np.bincount(mask_stack_z[z, :, :].flatten(), minlength=256)
+
+    counts_stack_x = np.zeros((w, 256), dtype=int)
+    for x in range(w):
+        counts_stack_x[x] = np.bincount(mask_stack_x[:, :, x].flatten(), minlength=256)
 
     # potential_stack = tifffile.imread("potential_.tif").astype(float)
     nrrd.write("mask_template.nrrd", np.zeros((d0, h0, w0), dtype=np.uint8))
     top_level, bot_level = 180, 100
 
     plt.ion()
-    for i in range(1000):
+    for i in range(3000):
         potential_stack[boundary == top_label] = top_level
         potential_stack[boundary == bot_label] = bot_level
 
         pc = update_potential_stack(potential_stack)
-        pc[boundary_mask_stack] = potential_stack[boundary_mask_stack]
+        # pc[boundary_mask_stack] = potential_stack[boundary_mask_stack]
         pc[boundary > 0] = potential_stack[boundary > 0]
+        potential_stack = pc
 
-        pcm = update_mask_stack(pc, mask_stack, counts_stack)
-        pcm[mask_stack <= 0] = pc[mask_stack <= 0]
-        pcm[boundary_mask_stack] = pc[boundary_mask_stack]
-        pcm[boundary > 0] = pc[boundary > 0]
+        if (i%5 == 2):
+            pcx = update_mask_stack(pc, mask_stack_x, counts_stack_x, axis=2)
+            pcx[mask_stack_x <= 0] = pc[mask_stack_x <= 0]
+            # pcx[boundary_mask_stack] = pc[boundary_mask_stack]
+            pcx[boundary > 0] = pc[boundary > 0]
+            potential_stack = pcx
 
-        potential_stack = pcm
+        if (i%5 == 1):
+            pcz = update_mask_stack(pc, mask_stack_z, counts_stack_z, axis=0)
+            pcz[mask_stack_z <= 0] = pc[mask_stack_z <= 0]
+            # pcz[boundary_mask_stack] = pc[boundary_mask_stack]
+            pcz[boundary > 0] = pc[boundary > 0]
+            potential_stack = pcz
 
         if (i%10 == 0):
             print('frame ', i)
 
-            axes[4].imshow(potential_stack[d//2], cmap=cmap)
-            axes[5].imshow(potential_stack[:, :, w//2], cmap=cmap)
+            axes[3].imshow(potential_stack[d//2, :, :], cmap=cmap)
+            axes[8].imshow(potential_stack[:, :, w//2], cmap=cmap)
 
-            if (i%100 == 0):
+            if (i == 800 or i == 1300 or i == 1990 or i== 2990):
+            # if (i%100 == 0):
                 selected_points_top = [(x, 0) for x in range(w)]
                 selected_points_bottom = [(x, h-1) for x in range(w)]
 
@@ -257,11 +300,11 @@ if __name__ == "__main__":
                     map_y = cv2.resize(map_y, (w0, h0), interpolation=cv2.INTER_LINEAR)
 
                     flatten_stack[z] = cv2.remap(tif_stack_origin[z], map_x, map_y, interpolation=cv2.INTER_LINEAR)
-                    flatten_stack[z, :(h0 * (255 - top_level) // 255), :] = 0
-                    flatten_stack[z, (h0 * (255 - bot_level) // 255):, :] = 0
+                    # flatten_stack[z, :(h0 * (255 - top_level) // 255), :] = 0
+                    # flatten_stack[z, (h0 * (255 - bot_level) // 255):, :] = 0
 
-                axes[6].imshow(flatten_stack[d0//2], cmap="gray")
-                axes[7].imshow(flatten_stack[:, :, w0//2], cmap='gray')
+                axes[4].imshow(flatten_stack[d0//2], cmap="gray")
+                axes[9].imshow(flatten_stack[:, :, w0//2], cmap='gray')
 
                 nrrd.write("extracted_data.nrrd", flatten_stack.astype(np.uint8))
                 tifffile.imwrite("extracted_data.tif", flatten_stack.astype(np.uint8))

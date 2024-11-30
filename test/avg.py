@@ -33,3 +33,14 @@ print("\nMask:")
 print(mask)
 print("\nResult:")
 print(result)
+
+pad_reflect = np.pad(image, pad_width=1, mode='reflect')
+print("\nPad Reflect:")
+print(pad_reflect)
+
+pad_edge = np.pad(image, pad_width=1, mode='edge')
+print("\nPad Edge:")
+print(pad_edge)
+
+
+

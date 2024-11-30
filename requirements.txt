@@ -8,3 +8,4 @@ scipy
 torch
 opencv-python
 scikit-learn
+opencv-python

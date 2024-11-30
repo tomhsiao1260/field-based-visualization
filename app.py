@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import convolve
 from matplotlib.colors import ListedColormap
 from skimage.morphology import skeletonize
-from scipy.ndimage import gaussian_filter
 
 def down_sampling(array, factor, mean=True):
     nz, ny, nx = array.shape
@@ -60,23 +59,54 @@ def generate_graph(skel):
     return G_filtered, components
 
 def update_potential_stack(potential_stack):
+    pc_pad = np.pad(potential_stack, pad_width=1, mode='reflect')
+
+    pc  = pc_pad[1:-1, 1:-1,  :-2].copy()
+    pc += pc_pad[1:-1, 1:-1,   2:]
+    pc += pc_pad[1:-1,  :-2, 1:-1]
+    pc += pc_pad[1:-1,   2:, 1:-1]
+    pc += pc_pad[ :-2, 1:-1, 1:-1]
+    pc += pc_pad[  2:, 1:-1, 1:-1]
+    pc /= 6
+
+    return pc
+
+def update_potential_level(potential_stack, boundary):
+    counts = np.zeros_like(potential_stack)
+    p_avg = potential_stack.copy()
     pc = potential_stack.copy()
-    g = 5
+    bc = potential_stack.copy()
+    bf = boundary.copy().astype(potential_stack.dtype)
 
-    pc[1:-1, 1:-1, 1:-1]  = potential_stack[1:-1, 1:-1,  :-2]
-    pc[1:-1, 1:-1, 1:-1] += potential_stack[1:-1, 1:-1,   2:]
-    pc[1:-1, 1:-1, 1:-1] += potential_stack[1:-1,  :-2, 1:-1]
-    pc[1:-1, 1:-1, 1:-1] += potential_stack[1:-1,   2:, 1:-1]
-    pc[1:-1, 1:-1, 1:-1] += potential_stack[ :-2, 1:-1, 1:-1]
-    pc[1:-1, 1:-1, 1:-1] += potential_stack[  2:, 1:-1, 1:-1]
-    pc[1:-1, 1:-1, 1:-1] /= 6
+    p_avg[1:-1, 1:-1, 1:-1]  = pc[1:-1, 1:-1,  :-2]
+    p_avg[1:-1, 1:-1, 1:-1] += pc[1:-1, 1:-1,   2:]
+    p_avg[1:-1, 1:-1, 1:-1] += pc[1:-1,  :-2, 1:-1]
+    p_avg[1:-1, 1:-1, 1:-1] += pc[1:-1,   2:, 1:-1]
+    p_avg[1:-1, 1:-1, 1:-1] += pc[ :-2, 1:-1, 1:-1]
+    p_avg[1:-1, 1:-1, 1:-1] += pc[  2:, 1:-1, 1:-1]
+    p_avg[1:-1, 1:-1, 1:-1] /= 6
 
-    pc[ :,  :,  0] = pc[ :,  :,  1]
-    pc[ :,  :, -1] = pc[ :,  :, -2]
-    pc[ :,  0,  :] = pc[ :,  1,  :]
-    pc[ :, -1,  :] = pc[ :, -2,  :]
-    pc[ 0,  :,  :] = pc[ 1,  :,  :]
-    pc[-1,  :,  :] = pc[-2,  :,  :]
+    p_avg[boundary == 0] = 0
+    p_avg[boundary == 1] -= 100
+    p_avg[boundary == 3] -= 180
+
+    bc[1:-1, 1:-1, 1:-1]  = p_avg[1:-1, 1:-1,  :-2]
+    bc[1:-1, 1:-1, 1:-1] += p_avg[1:-1, 1:-1,   2:]
+    bc[1:-1, 1:-1, 1:-1] += p_avg[1:-1,  :-2, 1:-1]
+    bc[1:-1, 1:-1, 1:-1] += p_avg[1:-1,   2:, 1:-1]
+    bc[1:-1, 1:-1, 1:-1] += p_avg[ :-2, 1:-1, 1:-1]
+    bc[1:-1, 1:-1, 1:-1] += p_avg[  2:, 1:-1, 1:-1]
+
+    counts[1:-1, 1:-1, 1:-1]  = (boundary[1:-1, 1:-1,  :-2] > 0)
+    counts[1:-1, 1:-1, 1:-1] += (boundary[1:-1, 1:-1,  :-2] > 0)
+    counts[1:-1, 1:-1, 1:-1] += (boundary[1:-1,  :-2, 1:-1] > 0)
+    counts[1:-1, 1:-1, 1:-1] += (boundary[1:-1,   2:, 1:-1] > 0)
+    counts[1:-1, 1:-1, 1:-1] += (boundary[ :-2, 1:-1, 1:-1] > 0)
+    counts[1:-1, 1:-1, 1:-1] += (boundary[  2:, 1:-1, 1:-1] > 0)
+
+    nonzero = counts > 0
+    pc[nonzero] += bc[nonzero] / counts[nonzero] * 0.3
+    pc[boundary > 0] = potential_stack[boundary > 0]
 
     return pc
 
@@ -151,7 +181,7 @@ def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
     return points_array
 
 if __name__ == "__main__":
-    z, y, x, layer, factor = 3513, 1900, 3400, 100, 5
+    z, y, x, factor = 3513, 1900, 3400, 5
     tif_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_volume.tif'
     mask_dir = f'/Users/yao/Desktop/distort-space-test/{z:05}_{y:05}_{x:05}_mask.nrrd'
 
@@ -163,7 +193,7 @@ if __name__ == "__main__":
 
     # load tif stack
     tif_stack_origin = tifffile.imread(tif_dir)
-    # tif_stack_origin = tif_stack_origin[:2, :, :]
+    # tif_stack_origin = tif_stack_origin[:3, :, :]
     # tif_stack_origin = tif_stack_origin[:2, 140:600, :]
     tif_stack = down_sampling(tif_stack_origin, factor)
 
@@ -177,7 +207,7 @@ if __name__ == "__main__":
     top_label, bot_label = 3, 1
 
     boundary, header = nrrd.read(mask_dir)
-    # boundary = boundary[:2, :, :]
+    # boundary = boundary[:3, :, :]
     # boundary = boundary[:2, 140:600, :]
     boundary = down_sampling(boundary, factor, False)
     boundary_temp = np.zeros_like(boundary)
@@ -185,12 +215,12 @@ if __name__ == "__main__":
     for label in [top_label, bot_label]:
         print('Processing label:', label)
         mask_label = (boundary == label).astype(np.uint8)
-        # smoothed = gaussian_filter(mask_label.astype(float), sigma=[5, 5, 5])
 
         for z in range(d):
-            # skeleton = skeletonize(smoothed[z] > 0.5)
             skeleton = skeletonize(mask_label[z])
             boundary_temp[z][skeleton] = label
+
+        # boundary_temp[boundary == label] = label
 
     boundary = boundary_temp
 
@@ -218,12 +248,12 @@ if __name__ == "__main__":
 
     # mask
     mask_stack_z = generate_mask_stack(skeleton_stack_z)
-    mask_stack_z[:, :110//factor, :] = 0
+    # mask_stack_z[:, :110//factor, :] = 0
 
     s = skeleton_stack_x.transpose(2, 1, 0)
     mask_stack_x = generate_mask_stack(s)
     mask_stack_x = mask_stack_x.transpose(2, 1, 0)
-    mask_stack_x[:, :110//factor, :] = 0
+    # mask_stack_x[:, :110//factor, :] = 0
 
     axes[2].imshow(mask_stack_z[d//2, :, :], cmap="nipy_spectral", origin="upper")
     axes[7].imshow(mask_stack_x[:, :, w//2], cmap="nipy_spectral", origin="upper")
@@ -263,6 +293,10 @@ if __name__ == "__main__":
         pc = update_potential_stack(potential_stack)
         # pc[boundary_mask_stack] = potential_stack[boundary_mask_stack]
         pc[boundary > 0] = potential_stack[boundary > 0]
+
+        # pc = update_potential_level(pc, boundary)
+        # pc[boundary > 0] = potential_stack[boundary > 0]
+
         potential_stack = pc
 
         if (i%5 == 2):
@@ -279,13 +313,14 @@ if __name__ == "__main__":
             pcz[boundary > 0] = pc[boundary > 0]
             potential_stack = pcz
 
-        if (i%10 == 0):
+        if (i%100 == 0):
             print('frame ', i)
 
             axes[3].imshow(potential_stack[d//2, :, :], cmap=cmap)
             axes[8].imshow(potential_stack[:, :, w//2], cmap=cmap)
 
-            if (i == 800 or i == 1300 or i == 1990 or i== 2990):
+            if (i%500 == 0):
+            # if (i == 800 or i == 1300 or i == 1990 or i== 2990):
             # if (i%100 == 0):
                 selected_points_top = [(x, 0) for x in range(w)]
                 selected_points_bottom = [(x, h-1) for x in range(w)]
@@ -300,8 +335,8 @@ if __name__ == "__main__":
                     map_y = cv2.resize(map_y, (w0, h0), interpolation=cv2.INTER_LINEAR)
 
                     flatten_stack[z] = cv2.remap(tif_stack_origin[z], map_x, map_y, interpolation=cv2.INTER_LINEAR)
-                    # flatten_stack[z, :(h0 * (255 - top_level) // 255), :] = 0
-                    # flatten_stack[z, (h0 * (255 - bot_level) // 255):, :] = 0
+                    flatten_stack[z, :(h0 * (255 - top_level) // 255), :] = 0
+                    flatten_stack[z, (h0 * (255 - bot_level) // 255):, :] = 0
 
                 axes[4].imshow(flatten_stack[d0//2], cmap="gray")
                 axes[9].imshow(flatten_stack[:, :, w0//2], cmap='gray')
@@ -310,7 +345,7 @@ if __name__ == "__main__":
                 tifffile.imwrite("extracted_data.tif", flatten_stack.astype(np.uint8))
                 tifffile.imwrite("potential.tif", potential_stack.astype(np.uint8))
 
-            plt.pause(0.01)
+            plt.pause(0.001)
     plt.ioff()
 
     # show the plot

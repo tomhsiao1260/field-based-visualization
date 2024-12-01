@@ -48,15 +48,15 @@ This method allows data exploration aligned with its inherent structures, offeri
 
 ## Result  
 
-Below are the initial results of my experiment:  
-
-![Visualization Workflow](sketch/plot.png)  
+Below are the initial results of my experiment:
 
 - **First Row:** Original data slices along the z and y axes, with electrodes shown as blue curves.  
 - **Second Row:** The result of applying a blur to the data.  
 - **Third Row:** Edges extracted from the blurred data, represented as a colored map. These edges act as "metal plates," the internal features used to adjust the electric potential, as described earlier.  
 - **Fourth Row:** Black-and-white stripe patterns showing the electric potential after iterative updates.  
 - **Fifth Row:** Equipotential lines extracted from the potential field, forming the final flattened surface representation.  
+
+![Visualization Workflow](sketch/plot.png)  
 
 Here is a video showcasing the final results. When navigating along the y-axis, the data is explored primarily in the normal direction of the surface, revealing extensive information about the papyrus fiber structures. Currently, only basic edge detection is used to adjust the potential field. Incorporating more precise feature data, such as fibers or segments, would further enhance the visualization.  
 

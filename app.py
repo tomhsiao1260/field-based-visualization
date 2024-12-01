@@ -224,6 +224,9 @@ if __name__ == "__main__":
 
     boundary = boundary_temp
 
+    axes[0].contour(boundary[d//2, :, :] * 255, colors='blue', linewidths=0.5)
+    axes[5].contour(boundary[:, :, w//2] * 255, colors='blue', linewidths=0.5)
+
     # blur & edge & skeleton
     blur_stack_z = np.zeros_like(tif_stack)
     edge_stack_z = np.zeros_like(tif_stack)

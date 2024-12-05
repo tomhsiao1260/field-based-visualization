@@ -1,11 +1,7 @@
-numpy
+opencv-python
 pynrrd
 tifffile
-scikit-image
-matplotlib
+numpy
 networkx
-scipy
-torch
-opencv-python
-scikit-learn
-opencv-python
+matplotlib
+scikit-image

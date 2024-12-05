@@ -10,30 +10,28 @@ from skimage.morphology import skeletonize
 from matplotlib.colors import ListedColormap
 from concurrent.futures import ThreadPoolExecutor
 
-def down_sampling(array, rescale, mean=True):
+def down_sampling(array, rescale=(1,1,1), mean=True):
+    rz, ry, rx = rescale
     nz, ny, nx = array.shape
-    tz = (nz // rescale) * rescale
-    ty = (ny // rescale) * rescale
-    tx = (nx // rescale) * rescale
-    # trimmed_array = array[:tz, :ty, :tx]
-    trimmed_array = array[:, :ty, :tx]
+
+    tz = (nz // rz) * rz
+    ty = (ny // ry) * ry
+    tx = (nx // rx) * rx
+    trimmed_array = array[:tz, :ty, :tx]
 
     if (mean):
         downscaled = trimmed_array.reshape(
-            nz, 1,
-            # tz // rescale, rescale,
-            ty // rescale, rescale,
-            tx // rescale, rescale
+            tz // rz, rz,
+            ty // ry, ry,
+            tx // rx, rx
         ).mean(axis=(1, 3, 5)).astype(array.dtype)
     else:
         downscaled = np.max(
             trimmed_array.reshape(
-                nz, 1,
-                # tz // rescale, rescale,
-                ty // rescale, rescale,
-                tx // rescale, rescale
-            ),axis=(1, 3, 5)
-        ).astype(array.dtype)
+                tz // rz, rz,
+                ty // ry, ry,
+                tx // rx, rx
+        ), axis=(1, 3, 5)).astype(array.dtype)
 
     return downscaled
 
@@ -170,7 +168,7 @@ if __name__ == "__main__":
     # params & path
     z, y, x = 3513, 1900, 3400
 
-    rescale, num_worker = 2, 8
+    rescale, num_worker = (3, 3, 3), 8
     top_electrode_label, bot_electrode_label = 3, 1
     top_electrode_level, bot_electrode_level = 180, 80
 
@@ -186,14 +184,16 @@ if __name__ == "__main__":
 
     # load volume
     volume_origin = tifffile.imread(volume_dir)
-    volume_origin = volume_origin[:50, :, :]
+    # volume_origin = volume_origin[:, :, :50]
+    # volume_origin = volume_origin[:50, :, :]
     volume = down_sampling(volume_origin, rescale)
     d, h, w = volume.shape
 
     # load electrode
     electrode, header = nrrd.read(electrode_dir)
     electrode = np.asarray(electrode)
-    electrode = electrode[:50, :, :]
+    # electrode = electrode[:, :, :50]
+    # electrode = electrode[:50, :, :]
     electrode = down_sampling(electrode, rescale, False)
 
     electrode_temp = np.zeros_like(electrode)
@@ -217,7 +217,8 @@ if __name__ == "__main__":
     # load conductor
     conductor, header = nrrd.read(conductor_dir)
     conductor = np.asarray(conductor).astype(bool)
-    conductor = conductor[:50, :, :]
+    # conductor = conductor[:, :, :50]
+    # conductor = conductor[:50, :, :]
     conductor = down_sampling(conductor, rescale, False)
 
     axes[1].set_title("Conductor")
@@ -254,13 +255,20 @@ if __name__ == "__main__":
     boundary[:, -1:, :] = True
 
     # rescale again
+    rescale = (2, 2, 2)
     potential = down_sampling(potential, rescale)
     electrode = down_sampling(electrode, rescale, False)
-    conductor_x = down_sampling(conductor_x, rescale, False)
-    conductor_z = down_sampling(conductor_z, rescale, False)
     boundary = down_sampling(boundary, rescale, False)
 
+    conductor_x = down_sampling(conductor_x, (2, 2, 1), False)
+    conductor_z = down_sampling(conductor_z, (1, 2, 2), False)
+    conductor_x = conductor_x[:, :, ::2]
+    conductor_z = conductor_z[::2, :, :]
+
     d, h, w = potential.shape
+
+    axes[2].imshow(conductor_z[d//2, :, :], cmap="nipy_spectral", origin="upper")
+    axes[7].imshow(conductor_x[:, :, w//2], cmap="nipy_spectral", origin="upper")
 
     # update potential
     colors = ['#000000', '#ffffff'] * 20
@@ -275,7 +283,7 @@ if __name__ == "__main__":
         counts_x[x] = np.bincount(conductor_x[:, :, x].flatten(), minlength=256)
 
     plt.ion()
-    for i in range(10000):
+    for i in range(3001):
         potential[electrode == top_electrode_label] = top_electrode_level
         potential[electrode == bot_electrode_label] = bot_electrode_level
 
@@ -284,12 +292,12 @@ if __name__ == "__main__":
         pc[electrode > 0] = potential[electrode > 0]
         potential = pc
 
-        # if (i%5 == 2):
-        #     pcx = update_conductor(pc, conductor_x, counts_x, axis=2)
-        #     pcx[conductor_x <= 0] = pc[conductor_x <= 0]
-        #     pcx[boundary] = pc[boundary]
-        #     pcx[electrode > 0] = pc[electrode > 0]
-        #     potential = pcx
+        if (i%5 == 2):
+            pcx = update_conductor(pc, conductor_x, counts_x, axis=2)
+            pcx[conductor_x <= 0] = pc[conductor_x <= 0]
+            pcx[boundary] = pc[boundary]
+            pcx[electrode > 0] = pc[electrode > 0]
+            potential = pcx
 
         if (i%5 == 1):
             pcz = update_conductor(pc, conductor_z, counts_z, axis=0)
@@ -298,7 +306,7 @@ if __name__ == "__main__":
             pcz[electrode > 0] = pc[electrode > 0]
             potential = pcz
 
-        if (i%100 == 0):
+        if (i%10 == 0):
             print('frame ', i)
 
             axes[3].set_title("Potential")

@@ -130,9 +130,9 @@ def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
     points_top = np.array(points_top)
     points_bottom = np.array(points_bottom)
 
-    points_grid = np.linspace(points_top, points_bottom, num_depth * 5, axis=0).astype(int)
+    points_grid = np.linspace(points_top, points_bottom, num_depth * 1, axis=0).astype(int)
     potential_grid = potential[points_grid[..., 1], points_grid[..., 0]]
-    levels = np.linspace(255, 0, num_depth) 
+    levels = np.linspace(0, 255, num_depth) 
 
     # y, x, 2
     num_points = points_top.shape[0]
@@ -149,8 +149,8 @@ def update_flatten(volume, potential):
     d, h, w = potential.shape
 
     flatten = np.zeros((d0, h0, w0), dtype=np.uint8)
-    selected_points_top = [(x, 0) for x in range(w)]
-    selected_points_bottom = [(x, h-1) for x in range(w)]
+    selected_points_top = [(x, h-1) for x in range(w)]
+    selected_points_bottom = [(x, 0) for x in range(w)]
 
     for z in range(d0):
         points_array = generate_2d_points_array(potential[z*d//d0-1], selected_points_top, selected_points_bottom, h)
@@ -169,8 +169,8 @@ if __name__ == "__main__":
     z, y, x = 3513, 1900, 3400
 
     rescale, num_worker = (3, 3, 3), 8
-    top_electrode_label, bot_electrode_label = 3, 1
-    top_electrode_level, bot_electrode_level = 180, 80
+    top_electrode_label, bot_electrode_label = 1, 2
+    top_electrode_level, bot_electrode_level = 0.15, 0.70
 
     volume_dir = f'/Users/yao/Desktop/field-based-visualization/{z:05}_{y:05}_{x:05}_volume.tif'
     electrode_dir = f'/Users/yao/Desktop/field-based-visualization/{z:05}_{y:05}_{x:05}_mask.nrrd'
@@ -246,9 +246,9 @@ if __name__ == "__main__":
 
     # potential (init)
     potential = np.zeros_like(conductor_z, dtype=float)
-    for y in range(h): potential[:, y, :] = (1 - (y / h)) * 255
-    potential[:, :1, :] = 255
-    potential[:, -1:, :] = 0
+    for y in range(h): potential[:, y, :] = (y / h) * 255
+    potential[:, :1, :] = 0
+    potential[:, -1:, :] = 255
 
     boundary = np.zeros_like(conductor_z, dtype=bool)
     boundary[:, :1, :] = True
@@ -284,8 +284,8 @@ if __name__ == "__main__":
 
     plt.ion()
     for i in range(3001):
-        potential[electrode == top_electrode_label] = top_electrode_level
-        potential[electrode == bot_electrode_label] = bot_electrode_level
+        potential[electrode == top_electrode_label] = top_electrode_level * 255
+        potential[electrode == bot_electrode_label] = bot_electrode_level * 255
 
         pc = update_potential(potential)
         pc[boundary] = potential[boundary]
@@ -314,6 +314,7 @@ if __name__ == "__main__":
             axes[8].imshow(potential[:, :, w//2], cmap=cmap)
 
             if (i%500 == 0):
+                # sampling potential
                 flatten = update_flatten(volume_origin, potential)
                 d0, h0, w0 = flatten.shape
 

@@ -1,3 +1,8 @@
+### Yao Hsiao - Field-Based Visualization - 2024
+
+# Testing Data:
+# https://dl.ash2txt.org/community-uploads/yao/Scroll1/03513_01900_03400/
+
 import cv2
 import nrrd
 import random
@@ -35,6 +40,7 @@ def down_sampling(array, rescale=(1,1,1), mean=True):
 
     return downscaled
 
+# Graph for conductors
 def generate_graph(skel):
     # build the connection
     points = np.column_stack(np.where(skel > 0))
@@ -58,6 +64,7 @@ def generate_graph(skel):
 
     return G_filtered, components
 
+# Write graph into mask
 def generate_mask(skeleton, num_worker=5):
     # graph
     d, h, w = skeleton.shape
@@ -93,6 +100,14 @@ def update_potential(potential):
     pc += pc_pad[  2:, 1:-1, 1:-1]
     pc /= 6
 
+    # # boundary fix
+    # s = 0.9535
+
+    # pc[0, :] = s * (2 * pc[1, :] - pc[2, :]) + (1-s) * pc[1, :]
+    # pc[-1, :] = s * (2 * pc[-2, :] - pc[-3, :]) + (1-s) * pc[-2, :]
+    # pc[:, 0] = s * (2 * pc[:, 1] - pc[:, 2]) + (1-s) * pc[:, 1]
+    # pc[:, -1] = s * (2 * pc[:, -2] - pc[:, -3]) + (1-s) * pc[:, -2]
+
     return pc
 
 def update_conductor(potential, conductor, counts, axis=0):
@@ -126,24 +141,6 @@ def update_conductor(potential, conductor, counts, axis=0):
 
     return pc
 
-def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
-    points_top = np.array(points_top)
-    points_bottom = np.array(points_bottom)
-
-    points_grid = np.linspace(points_top, points_bottom, num_depth * 1, axis=0).astype(int)
-    potential_grid = potential[points_grid[..., 1], points_grid[..., 0]]
-    levels = np.linspace(0, 255, num_depth) 
-
-    # y, x, 2
-    num_points = points_top.shape[0]
-    points_array = np.zeros((num_depth, num_points, 2))
-
-    for i in range(num_points):
-        points_array[:, i, 0] = np.interp(levels, potential_grid[:, i][::-1], points_grid[:, i, 0][::-1])
-        points_array[:, i, 1] = np.interp(levels, potential_grid[:, i][::-1], points_grid[:, i, 1][::-1])
-
-    return points_array
-
 def update_flatten(volume, potential):
     d0, h0, w0 = volume.shape
     d, h, w = potential.shape
@@ -164,17 +161,36 @@ def update_flatten(volume, potential):
 
     return flatten
 
+# potential sampling to generate flatten result
+def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
+    points_top = np.array(points_top)
+    points_bottom = np.array(points_bottom)
+
+    points_grid = np.linspace(points_top, points_bottom, num_depth * 1, axis=0).astype(int)
+    potential_grid = potential[points_grid[..., 1], points_grid[..., 0]]
+    levels = np.linspace(0, 255, num_depth) 
+
+    # y, x, 2
+    num_points = points_top.shape[0]
+    points_array = np.zeros((num_depth, num_points, 2))
+
+    for i in range(num_points):
+        points_array[:, i, 0] = np.interp(levels, potential_grid[:, i][::-1], points_grid[:, i, 0][::-1])
+        points_array[:, i, 1] = np.interp(levels, potential_grid[:, i][::-1], points_grid[:, i, 1][::-1])
+
+    return points_array
+
 if __name__ == "__main__":
-    # params & path
+    # path & params
     z, y, x = 3513, 1900, 3400
-
-    rescale, num_worker = (3, 3, 3), 8
-    top_electrode_label, bot_electrode_label = 1, 2
-    top_electrode_level, bot_electrode_level = 0.15, 0.70
-
-    volume_dir = f'/Users/yao/Desktop/field-based-visualization/{z:05}_{y:05}_{x:05}_volume.tif'
+    volume_dir = f'/Users/yao/Desktop/field-based-visualization/{z:05}_{y:05}_{x:05}_volume.nrrd'
     electrode_dir = f'/Users/yao/Desktop/field-based-visualization/{z:05}_{y:05}_{x:05}_mask.nrrd'
     conductor_dir = f'/Users/yao/Desktop/field-based-visualization/{z:05}_{y:05}_{x:05}_fiber.nrrd'
+
+    # Label: select value in mask.nrrd (that you want it to become electrode)
+    # Level: electrode horizontal position after flattening (between 0:top ~ 1:bottom)
+    electrode_label_level_pairs = [(1, 0.15), (2, 0.70)] # [(label0, level0), (label1, level1), ...]
+    rescale, num_worker = (3, 3, 3), 8
 
     # plot init
     fig, axes = plt.subplots(2, 5, figsize=(12, 4))
@@ -183,22 +199,18 @@ if __name__ == "__main__":
     for ax in axes: ax.axis('off')
 
     # load volume
-    volume_origin = tifffile.imread(volume_dir)
-    # volume_origin = volume_origin[:, :, :50]
-    # volume_origin = volume_origin[:50, :, :]
+    volume_origin, header = nrrd.read(volume_dir)
     volume = down_sampling(volume_origin, rescale)
     d, h, w = volume.shape
 
     # load electrode
     electrode, header = nrrd.read(electrode_dir)
     electrode = np.asarray(electrode)
-    # electrode = electrode[:, :, :50]
-    # electrode = electrode[:50, :, :]
     electrode = down_sampling(electrode, rescale, False)
 
     electrode_temp = np.zeros_like(electrode)
 
-    for label in [top_electrode_label, bot_electrode_label]:
+    for label, level in electrode_label_level_pairs:
         print('Processing electrode:', label)
         mask_label = (electrode == label).astype(np.uint8)
 
@@ -217,8 +229,6 @@ if __name__ == "__main__":
     # load conductor
     conductor, header = nrrd.read(conductor_dir)
     conductor = np.asarray(conductor).astype(bool)
-    # conductor = conductor[:, :, :50]
-    # conductor = conductor[:50, :, :]
     conductor = down_sampling(conductor, rescale, False)
 
     axes[1].set_title("Conductor")
@@ -246,6 +256,7 @@ if __name__ == "__main__":
 
     # potential (init)
     potential = np.zeros_like(conductor_z, dtype=float)
+    # in some cases, may need some adjustments for better convergence
     for y in range(h): potential[:, y, :] = (y / h) * 255
     potential[:, :1, :] = 0
     potential[:, -1:, :] = 255
@@ -284,14 +295,17 @@ if __name__ == "__main__":
 
     plt.ion()
     for i in range(3001):
-        potential[electrode == top_electrode_label] = top_electrode_level * 255
-        potential[electrode == bot_electrode_label] = bot_electrode_level * 255
+        # electrodes should remain constant
+        for label, level in electrode_label_level_pairs:
+            potential[electrode == label] = level * 255
 
+        # potential (free space)
         pc = update_potential(potential)
         pc[boundary] = potential[boundary]
         pc[electrode > 0] = potential[electrode > 0]
         potential = pc
 
+        # conductor x direction
         if (i%5 == 2):
             pcx = update_conductor(pc, conductor_x, counts_x, axis=2)
             pcx[conductor_x <= 0] = pc[conductor_x <= 0]
@@ -299,6 +313,7 @@ if __name__ == "__main__":
             pcx[electrode > 0] = pc[electrode > 0]
             potential = pcx
 
+        # conductor z direction
         if (i%5 == 1):
             pcz = update_conductor(pc, conductor_z, counts_z, axis=0)
             pcz[conductor_z <= 0] = pc[conductor_z <= 0]
@@ -306,6 +321,7 @@ if __name__ == "__main__":
             pcz[electrode > 0] = pc[electrode > 0]
             potential = pcz
 
+        # plot
         if (i%10 == 0):
             print('frame ', i)
 
@@ -313,8 +329,10 @@ if __name__ == "__main__":
             axes[3].imshow(potential[d//2, :, :], cmap=cmap)
             axes[8].imshow(potential[:, :, w//2], cmap=cmap)
 
-            if (i%500 == 0):
-                # sampling potential
+            # save the flatten result
+            if (i%500 == 0 and i != 0):
+                print('Generate flatten result ...')
+
                 flatten = update_flatten(volume_origin, potential)
                 d0, h0, w0 = flatten.shape
 
@@ -322,9 +340,9 @@ if __name__ == "__main__":
                 axes[4].imshow(flatten[d0//2], cmap="gray")
                 axes[9].imshow(flatten[:, :, w0//2], cmap='gray')
 
-                nrrd.write("flatten.nrrd", flatten.astype(np.uint8))
-                tifffile.imwrite("flatten.tif", flatten.astype(np.uint8))
-                tifffile.imwrite("potential.tif", potential.astype(np.uint8))
+                nrrd.write(f"{z:05}_{y:05}_{x:05}_flatten.nrrd", flatten.astype(np.uint8))
+                tifffile.imwrite(f"{z:05}_{y:05}_{x:05}_flatten.tif", flatten.astype(np.uint8))
+                tifffile.imwrite(f"{z:05}_{y:05}_{x:05}_potential.tif", potential.astype(np.uint8))
 
             plt.pause(0.001)
     plt.ioff()

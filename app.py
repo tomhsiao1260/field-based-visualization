@@ -1,8 +1,9 @@
 ### Yao Hsiao - Field-Based Visualization - 2024
 
 # Testing Data:
-# https://dl.ash2txt.org/community-uploads/yao/Scroll1/03513_01900_03400/
+# https://dl.ash2txt.org/community-uploads/yao/scroll1/03513_01900_03400/
 
+import os
 import cv2
 import nrrd
 import random
@@ -103,10 +104,12 @@ def update_potential(potential):
     # # boundary fix
     # s = 0.9535
 
-    # pc[0, :] = s * (2 * pc[1, :] - pc[2, :]) + (1-s) * pc[1, :]
-    # pc[-1, :] = s * (2 * pc[-2, :] - pc[-3, :]) + (1-s) * pc[-2, :]
-    # pc[:, 0] = s * (2 * pc[:, 1] - pc[:, 2]) + (1-s) * pc[:, 1]
-    # pc[:, -1] = s * (2 * pc[:, -2] - pc[:, -3]) + (1-s) * pc[:, -2]
+    # pc[ 0, :, :] = s * (2 * pc[ 1, :, :] - pc[ 2, :, :]) + (1-s) * pc[ 1, :, :]
+    # pc[-1, :, :] = s * (2 * pc[-2, :, :] - pc[-3, :, :]) + (1-s) * pc[-2, :, :]
+    # pc[ :, 0, :] = s * (2 * pc[ :, 1, :] - pc[ :, 2, :]) + (1-s) * pc[ :, 1, :]
+    # pc[ :,-1, :] = s * (2 * pc[ :,-2, :] - pc[ :,-3, :]) + (1-s) * pc[ :,-2, :]
+    # pc[ :, :, 0] = s * (2 * pc[ :, :, 1] - pc[ :, :, 2]) + (1-s) * pc[ :, :, 1]
+    # pc[ :, :,-1] = s * (2 * pc[ :, :,-2] - pc[ :, :,-3]) + (1-s) * pc[ :, :,-2]
 
     return pc
 
@@ -181,29 +184,41 @@ def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
     return points_array
 
 if __name__ == "__main__":
-    # path & params
-    z, y, x = 3513, 1900, 3400
-    volume_dir = f'/Users/yao/Desktop/field-based-visualization/{z:05}_{y:05}_{x:05}_volume.nrrd'
-    electrode_dir = f'/Users/yao/Desktop/field-based-visualization/{z:05}_{y:05}_{x:05}_mask.nrrd'
-    conductor_dir = f'/Users/yao/Desktop/field-based-visualization/{z:05}_{y:05}_{x:05}_fiber.nrrd'
+    ### path & params
 
+    # electrode_label_level_pairs: [(label0, level0), (label1, level1), ...]
     # Label: select value in mask.nrrd (that you want it to become electrode)
     # Level: electrode horizontal position after flattening (between 0:top ~ 1:bottom)
-    electrode_label_level_pairs = [(1, 0.15), (2, 0.70)] # [(label0, level0), (label1, level1), ...]
+
+    # zmin, ymin, xmin, electrode_label_level_pairs = 5049, 2533, 3380, [(2, 0.60)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 5049, 1765, 3380, [(1, 0.70)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 4281, 2533, 3380, [(2, 0.30)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 4281, 1765, 3380, [(1, 0.50), (2, 0.95)]
+    zmin, ymin, xmin, electrode_label_level_pairs = 3513, 1900, 3400, [(1, 0.15), (2, 0.70)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 2736, 1831, 3413, [(1, 0.20), (2, 0.75)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 1968, 1860, 3424, [(1, 0.20), (2, 0.95)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1537, 3490, [(1, 0.65)]
+
+    dirname = f'/Users/yao/Desktop/full-scrolls/community-uploads/yao/scroll1/{zmin:05}_{ymin:05}_{xmin:05}/'
+
+    volume_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_volume.nrrd')
+    electrode_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_mask.nrrd')
+    conductor_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_fiber.nrrd')
+
     rescale, num_worker = (3, 3, 3), 8
 
-    # plot init
-    fig, axes = plt.subplots(2, 5, figsize=(12, 4))
+    ### plot init
+    fig, axes = plt.subplots(2, 5, figsize=(10, 4))
 
     axes = axes.ravel()
     for ax in axes: ax.axis('off')
 
-    # load volume
+    ### load volume
     volume_origin, header = nrrd.read(volume_dir)
     volume = down_sampling(volume_origin, rescale)
     d, h, w = volume.shape
 
-    # load electrode
+    ### load electrode
     electrode, header = nrrd.read(electrode_dir)
     electrode = np.asarray(electrode)
     electrode = down_sampling(electrode, rescale, False)
@@ -226,7 +241,7 @@ if __name__ == "__main__":
     axes[5].imshow(volume[:, :, w//2], cmap='gray')
     axes[5].contour(electrode[:, :, w//2] * 255, colors='blue', linewidths=0.5)
 
-    # load conductor
+    ### load conductor
     conductor, header = nrrd.read(conductor_dir)
     conductor = np.asarray(conductor).astype(bool)
     conductor = down_sampling(conductor, rescale, False)
@@ -237,18 +252,29 @@ if __name__ == "__main__":
     axes[6].imshow(conductor[:, :, w//2], cmap='gray')
     axes[6].contour(electrode[:, :, w//2] * 255, colors='blue', linewidths=0.5)
 
-    # conductor along z & x
-    conductor_z = np.zeros_like(conductor)
-    conductor_x = np.zeros_like(conductor)
+    ### conductor graph
+    conductor_z_dir = os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_conductor_z.nrrd")
+    conductor_x_dir = os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_conductor_x.nrrd")
 
-    for z in range(d): conductor_z[z, :, :] = skeletonize(conductor[z, :, :])
-    for x in range(w): conductor_x[:, :, x] = skeletonize(conductor[:, :, x])
+    # along z
+    if os.path.exists(conductor_z_dir):
+        conductor_z, _ = nrrd.read(conductor_z_dir)
+    else:
+        conductor_z = np.zeros_like(conductor)
+        for z in range(d): conductor_z[z, :, :] = skeletonize(conductor[z, :, :])
+        conductor_z = generate_mask(conductor_z, num_worker)
+        nrrd.write(conductor_z_dir, conductor_z)
 
-    conductor_z = generate_mask(conductor_z, num_worker)
-
-    s = conductor_x.transpose(2, 1, 0)
-    conductor_x = generate_mask(s, num_worker)
-    conductor_x = conductor_x.transpose(2, 1, 0)
+    # along x
+    if os.path.exists(conductor_x_dir):
+        conductor_x, _ = nrrd.read(conductor_x_dir)
+    else:
+        conductor_x = np.zeros_like(conductor)
+        for x in range(w): conductor_x[:, :, x] = skeletonize(conductor[:, :, x])
+        s = conductor_x.transpose(2, 1, 0)
+        conductor_x = generate_mask(s, num_worker)
+        conductor_x = conductor_x.transpose(2, 1, 0)
+        nrrd.write(conductor_x_dir, conductor_x)
 
     axes[2].set_title("Discrete Conductor")
     axes[2].imshow(conductor_z[d//2, :, :], cmap="nipy_spectral", origin="upper")
@@ -294,7 +320,7 @@ if __name__ == "__main__":
         counts_x[x] = np.bincount(conductor_x[:, :, x].flatten(), minlength=256)
 
     plt.ion()
-    for i in range(3001):
+    for i in range(1501):
         # electrodes should remain constant
         for label, level in electrode_label_level_pairs:
             potential[electrode == label] = level * 255
@@ -331,7 +357,7 @@ if __name__ == "__main__":
 
             # save the flatten result
             if (i%500 == 0 and i != 0):
-                print('Generate flatten result ...')
+                print('update flatten result ...')
 
                 flatten = update_flatten(volume_origin, potential)
                 d0, h0, w0 = flatten.shape
@@ -340,13 +366,13 @@ if __name__ == "__main__":
                 axes[4].imshow(flatten[d0//2], cmap="gray")
                 axes[9].imshow(flatten[:, :, w0//2], cmap='gray')
 
-                nrrd.write(f"{z:05}_{y:05}_{x:05}_flatten.nrrd", flatten.astype(np.uint8))
-                tifffile.imwrite(f"{z:05}_{y:05}_{x:05}_flatten.tif", flatten.astype(np.uint8))
-                tifffile.imwrite(f"{z:05}_{y:05}_{x:05}_potential.tif", potential.astype(np.uint8))
+                nrrd.write(os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_flatten.nrrd"), flatten.astype(np.uint8))
+                tifffile.imwrite(os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_flatten.tif"), flatten.astype(np.uint8))
 
             plt.pause(0.001)
     plt.ioff()
 
+    print('complete')
     plt.tight_layout()
     plt.show()
 

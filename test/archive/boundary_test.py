@@ -43,15 +43,15 @@ if __name__ == '__main__':
 
     y, x = np.ogrid[:h, :w]
     # boundary_mask[:1, :] = True
-    # boundary_mask[abs(x-y)>50] = True
-    # boundary_mask[(25 < x) & (x < 75) & (45 < y) & (y < 55)] = True
-    boundary_mask[(y-h//2)**2 + (x-w//2)**2 < h*w//160] = True
+    # boundary_mask[abs(x-y)>70] = True
+    boundary_mask[(0 < x) & (x < 100) & (25 < y) & (y < 35)] = True
+    # boundary_mask[(y-h//2)**2 + (x-w//2)**2 < h*w//160] = True
     # boundary_mask[(y-h//4)**2 + (x-w//4)**2 < h*w//160] = True
     # boundary_mask[((y-1*h//4)**2 + (x-1*w//4)**2 < h*w//160) | ((y-3*h//4)**2 + (x-3*w//4)**2 < h*w//160)] = True
 
     # potential
     potential = np.zeros_like(boundary_mask, dtype=float)
-    potential[boundary_mask > 0] = 255
+    potential[boundary_mask > 0] = 128
 
     colors = ['#000000', '#ffffff'] * 20
     cmap = ListedColormap(colors)

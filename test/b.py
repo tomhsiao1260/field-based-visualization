@@ -42,19 +42,18 @@ def update_potential(potential, axes, cmap, m=False):
 
     return pc
 
-def update_electrode_condition(x, y, theta):
-    x_center, y_center = 50, 50
+def update_electrode_condition(x, y, center=(0,0), theta=0):
+    # _, w = x.shape
+    # h, _ = y.shape
+    xc, yc = center
 
-    x_shifted = x - x_center
-    y_shifted = y - y_center
+    x_shifted = x - xc
+    y_shifted = y - yc
 
     x_rotated = np.cos(theta) * x_shifted - np.sin(theta) * y_shifted
     y_rotated = np.sin(theta) * x_shifted + np.cos(theta) * y_shifted
 
-    x_rotated += x_center
-    y_rotated += y_center
-
-    condition = (30 <= x_rotated) & (x_rotated < 70) & (45 <= y_rotated) & (y_rotated < 55)
+    condition = (-40 <= x_rotated) & (x_rotated < 40) & (-2 <= y_rotated) & (y_rotated < 2)
 
     return condition
 
@@ -66,19 +65,23 @@ if __name__ == "__main__":
 
     boundary_mask = np.zeros((100, 100), dtype=bool)
     h, w = boundary_mask.shape
-
     y, x = np.ogrid[:h, :w]
 
-    condition_electrode = (30 < x) & (x < 70) & (45 < y) & (y < 55)
-    boundary_mask[condition_electrode] = True
+    center = (0, 20)
+    theta = np.pi / 1000 * 0
+    condition_0 = update_electrode_condition(x, y, center, theta)
+
+    center = (100, 80)
+    theta = np.pi / 1000 * 0
+    condition_1 = update_electrode_condition(x, y, center, theta)
+
+    boundary_mask[condition_0] = True
+    boundary_mask[condition_1] = True
 
     potential = np.zeros_like(boundary_mask, dtype=float)
-    # potential[(0 <= x) & (x < 100) & (0 <= y) & (y < 50)] = 255
-    # potential[(0 <= x) & (x < 100) & (50 <= y) & (y < 100)] = 0
-    # potential[(100 <= x + y)] = 255
-    # potential[(100 > x + y)] = 0
     potential[:, :] = -1
-    potential[boundary_mask] = 128
+    potential[condition_0] = 200
+    potential[condition_1] = 50
 
     colors = ['#000000', '#ffffff'] * 20
     cmap = ListedColormap(colors)
@@ -90,14 +93,6 @@ if __name__ == "__main__":
     plt.ion()
 
     for i in range(5000):
-        if (i > 0):
-            theta = np.pi / 1000 * 250
-            condition = update_electrode_condition(x, y, theta)
-
-            boundary_mask[:, :] = False
-            boundary_mask[condition] = True
-            pc[boundary_mask] = 128
-
         m = False
         if (i>1000): m = True
         pc = update_potential(potential, axes, cmap, m)
@@ -113,7 +108,7 @@ if __name__ == "__main__":
             axes[1].imshow(potential, cmap="gray")
             axes[2].imshow(a, cmap="gray")
 
-            plt.pause(0.01)
+            plt.pause(0.1)
 
     plt.ioff()
 

@@ -44,17 +44,21 @@ def update_potential(potential, axes, cmap, m=False):
     decay = (top != -1) & (bot == -1)
     static = (top == -1) & (bot == -1) & (left == -1) & (right == -1)
 
-    top[grow & (top == -1)] = 255
-    bot[grow & (bot == -1)] = 255
-    left[grow & (left == -1)] = 255
-    right[grow & (right == -1)] = 255
+    s = 5
 
-    top[decay & (top == -1)] = 0
-    bot[decay & (bot == -1)] = 0
-    left[decay & (left == -1)] = 0
-    right[decay & (right == -1)] = 0
+    top[grow & (top == -1)] = bot[grow & (top == -1)] + s
+    bot[grow & (bot == -1)] = bot[grow & (bot == -1)] + s
+    left[grow & (left == -1)] = bot[grow & (left == -1)] + s
+    right[grow & (right == -1)] = bot[grow & (right == -1)] + s
+
+    top[decay & (top == -1)] = top[decay & (top == -1)] - s
+    bot[decay & (bot == -1)] = top[decay & (bot == -1)] - s
+    left[decay & (left == -1)] = top[decay & (left == -1)] - s
+    right[decay & (right == -1)] = top[decay & (right == -1)] - s
 
     pc = (top + bot + left + right) / 4
+    pc[pc > 255] = 255
+    pc[pc < 0] = 0
     pc[static] = -1
 
     s = 0.9535
@@ -83,7 +87,7 @@ def update_electrode_condition(mask, center=(0,0), theta=0):
     x_rotated = np.cos(theta) * x_shifted - np.sin(theta) * y_shifted
     y_rotated = np.sin(theta) * x_shifted + np.cos(theta) * y_shifted
 
-    condition = (-20 <= x_rotated) & (x_rotated < 20) & (-2 <= y_rotated) & (y_rotated < 2)
+    condition = (-w//4 <= x_rotated) & (x_rotated < w//4) & (-2 <= y_rotated) & (y_rotated < 2)
 
     return condition
 
@@ -118,20 +122,20 @@ if __name__ == "__main__":
 
     electrode_temp = np.zeros_like(electrode)
 
-    for label, level in electrode_label_level_pairs:
-        print('Processing electrode:', label)
-        mask_label = (electrode == label).astype(np.uint8)
+    # for label, level in electrode_label_level_pairs:
+    #     print('Processing electrode:', label)
+    #     mask_label = (electrode == label).astype(np.uint8)
 
-        for z in range(d):
-            skeleton = skeletonize(mask_label[z])
-            electrode_temp[z][skeleton] = label
+    #     for z in range(d):
+    #         skeleton = skeletonize(mask_label[z])
+    #         electrode_temp[z][skeleton] = label
 
-    # # testing label
-    # for z in range(d):
-    #     center = (w//2, h//2)
-    #     theta = np.pi / 1000 * 0
-    #     condition = update_electrode_condition(electrode_temp[z], center, theta)
-    #     electrode_temp[z][condition] = 10
+    # testing label
+    for z in range(d):
+        center = (w//2, h//2)
+        theta = np.pi / 1000 * 250
+        condition = update_electrode_condition(electrode_temp[z], center, theta)
+        electrode_temp[z][condition] = 10
 
     electrode = electrode_temp
 
@@ -164,24 +168,32 @@ if __name__ == "__main__":
     # update potential
     plt.ion()
 
-    for i in range(5000):
+    for i in range(100):
         # electrodes should remain constant
-        for label, level in electrode_label_level_pairs:
-            potential[electrode == label] = level * 255
+        # for label, level in electrode_label_level_pairs:
+        #     potential[electrode == label] = level * 255
         potential[electrode == 10] = 128
 
         m = False
-        if (i>1000): m = True
+        if (i>200): m = True
         pc = update_potential(potential[d//2, :, :], axes, cmap, m)
         potential[d//2, :, :] = pc
 
         a = (potential == -1).astype(bool)[d//2, :, :]
 
-        if (i%100 == 0 and i > 200):
+        if (i%100 == 0 and i > 100):
+            print(i)
+            axes[2].imshow(potential[d//2, :, :], cmap=cmap)
+            axes[3].imshow(potential[d//2, :, :], cmap="gray")
+            axes[4].imshow(a, cmap="gray")
+
+            plt.pause(0.01)
+
+        if (i%2 == 0 and i < 100):
             print(i)
             axes[1].imshow(potential[d//2, :, :], cmap=cmap)
-            axes[2].imshow(potential[d//2, :, :], cmap="gray")
-            axes[3].imshow(a, cmap="gray")
+            axes[3].imshow(potential[d//2, :, :], cmap="gray")
+            axes[4].imshow(a, cmap="gray")
 
             plt.pause(0.01)
 

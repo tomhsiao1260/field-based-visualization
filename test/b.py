@@ -1,10 +1,40 @@
+import os
+import nrrd
 import numpy as np
 import matplotlib.pyplot as plt
+
+from skimage.morphology import skeletonize
 from matplotlib.colors import ListedColormap
+
+def down_sampling(array, rescale=(1,1,1), mean=True):
+    rz, ry, rx = rescale
+    nz, ny, nx = array.shape
+
+    tz = (nz // rz) * rz
+    ty = (ny // ry) * ry
+    tx = (nx // rx) * rx
+    trimmed_array = array[:tz, :ty, :tx]
+
+    if (mean):
+        downscaled = trimmed_array.reshape(
+            tz // rz, rz,
+            ty // ry, ry,
+            tx // rx, rx
+        ).mean(axis=(1, 3, 5)).astype(array.dtype)
+    else:
+        downscaled = np.max(
+            trimmed_array.reshape(
+                tz // rz, rz,
+                ty // ry, ry,
+                tx // rx, rx
+        ), axis=(1, 3, 5)).astype(array.dtype)
+
+    return downscaled
 
 def update_potential(potential, axes, cmap, m=False):
     pc_pad = np.pad(potential, pad_width=1, mode='edge')
 
+    center = pc_pad[1:-1, 1:-1].copy()
     top = pc_pad[:-2, 1:-1].copy()
     bot = pc_pad[2:, 1:-1].copy()
     left = pc_pad[1:-1,  :-2].copy()
@@ -42,10 +72,10 @@ def update_potential(potential, axes, cmap, m=False):
 
     return pc
 
-def update_electrode_condition(x, y, center=(0,0), theta=0):
-    # _, w = x.shape
-    # h, _ = y.shape
+def update_electrode_condition(mask, center=(0,0), theta=0):
     xc, yc = center
+    h, w = mask.shape
+    y, x = np.ogrid[:h, :w]
 
     x_shifted = x - xc
     y_shifted = y - yc
@@ -53,62 +83,107 @@ def update_electrode_condition(x, y, center=(0,0), theta=0):
     x_rotated = np.cos(theta) * x_shifted - np.sin(theta) * y_shifted
     y_rotated = np.sin(theta) * x_shifted + np.cos(theta) * y_shifted
 
-    condition = (-40 <= x_rotated) & (x_rotated < 40) & (-2 <= y_rotated) & (y_rotated < 2)
+    condition = (-20 <= x_rotated) & (x_rotated < 20) & (-2 <= y_rotated) & (y_rotated < 2)
 
     return condition
 
 if __name__ == "__main__":
+    ### path & params
+
+    # zmin, ymin, xmin, electrode_label_level_pairs = 5049, 2533, 3380, [(2, 0.60)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 5049, 1765, 3380, [(1, 0.70)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 4281, 2533, 3380, [(2, 0.30)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 4281, 1765, 3380, [(1, 0.50), (2, 0.95)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 3513, 1900, 3400, [(1, 0.15), (2, 0.70)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 2736, 1831, 3413, [(1, 0.20), (2, 0.75)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 1968, 1860, 3424, [(1, 0.20), (2, 0.95)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1800, 2990, [(1, 0.60)]
+    zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1800, 2990, [(1, 0.60)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1537, 3490, [(1, 0.65)]
+
+    dirname = f'/Users/yao/Desktop/full-scrolls/community-uploads/yao/scroll1/{zmin:05}_{ymin:05}_{xmin:05}/'
+
+    electrode_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_mask.nrrd')
+
+    rescale = (1, 3, 3)
+
+    ### load electrode
+    electrode, header = nrrd.read(electrode_dir)
+    electrode = np.asarray(electrode)
+    d, h, w = electrode.shape
+    electrode = electrode[d//2, :, :][np.newaxis, ...]
+    # electrode = electrode[:1, :, :]
+    electrode = down_sampling(electrode, rescale, False)
+    d, h, w = electrode.shape
+
+    electrode_temp = np.zeros_like(electrode)
+
+    for label, level in electrode_label_level_pairs:
+        print('Processing electrode:', label)
+        mask_label = (electrode == label).astype(np.uint8)
+
+        for z in range(d):
+            skeleton = skeletonize(mask_label[z])
+            electrode_temp[z][skeleton] = label
+
+    # # testing label
+    # for z in range(d):
+    #     center = (w//2, h//2)
+    #     theta = np.pi / 1000 * 0
+    #     condition = update_electrode_condition(electrode_temp[z], center, theta)
+    #     electrode_temp[z][condition] = 10
+
+    electrode = electrode_temp
+
+    ### plot init
     fig, axes = plt.subplots(2, 5, figsize=(10, 4))
 
     axes = axes.ravel()
     for ax in axes: ax.axis('off')
 
-    boundary_mask = np.zeros((100, 100), dtype=bool)
-    h, w = boundary_mask.shape
-    y, x = np.ogrid[:h, :w]
+    potential = np.zeros_like(electrode, dtype=float)
+    potential[:, :, :] = -1
 
-    center = (0, 20)
-    theta = np.pi / 1000 * 0
-    condition_0 = update_electrode_condition(x, y, center, theta)
+    # rescale again
+    rescale = (1, 2, 2)
+    potential = down_sampling(potential, rescale)
+    electrode = down_sampling(electrode, rescale, False)
 
-    center = (100, 80)
-    theta = np.pi / 1000 * 0
-    condition_1 = update_electrode_condition(x, y, center, theta)
-
-    boundary_mask[condition_0] = True
-    boundary_mask[condition_1] = True
-
-    potential = np.zeros_like(boundary_mask, dtype=float)
-    potential[:, :] = -1
-    potential[condition_0] = 200
-    potential[condition_1] = 50
+    d, h, w = potential.shape
 
     colors = ['#000000', '#ffffff'] * 20
     cmap = ListedColormap(colors)
 
-    axes[0].set_title("Potential")
-    axes[0].imshow(potential, cmap=cmap)
+    axes[0].set_title("Electrode")
+    axes[0].contour(electrode[d//2, ::-1, :] * 255, colors='blue', linewidths=0.5)
+    # axes[0].contour(electrode[:, :, w//2] * 255, colors='blue', linewidths=0.5)
+
+    axes[1].set_title("Potential")
+    axes[1].imshow(potential[d//2, :, :], cmap=cmap)
 
     # update potential
     plt.ion()
 
     for i in range(5000):
+        # electrodes should remain constant
+        for label, level in electrode_label_level_pairs:
+            potential[electrode == label] = level * 255
+        potential[electrode == 10] = 128
+
         m = False
         if (i>1000): m = True
-        pc = update_potential(potential, axes, cmap, m)
-        pc[boundary_mask] = potential[boundary_mask]
-        potential = pc
+        pc = update_potential(potential[d//2, :, :], axes, cmap, m)
+        potential[d//2, :, :] = pc
 
-        a = (potential == -1).astype(bool)
+        a = (potential == -1).astype(bool)[d//2, :, :]
 
-        # if (i%1 == 0):
         if (i%100 == 0 and i > 200):
             print(i)
-            axes[0].imshow(potential, cmap=cmap)
-            axes[1].imshow(potential, cmap="gray")
-            axes[2].imshow(a, cmap="gray")
+            axes[1].imshow(potential[d//2, :, :], cmap=cmap)
+            axes[2].imshow(potential[d//2, :, :], cmap="gray")
+            axes[3].imshow(a, cmap="gray")
 
-            plt.pause(0.1)
+            plt.pause(0.01)
 
     plt.ioff()
 

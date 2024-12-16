@@ -40,21 +40,21 @@ def update_potential(potential, axes, cmap, m=False):
     left = pc_pad[1:-1,  :-2].copy()
     right = pc_pad[1:-1,   2:].copy()
 
-    grow = (top == -1) & (bot != -1)
-    decay = (top != -1) & (bot == -1)
+    decay = (top == -1) & (bot != -1)
+    grow = (top != -1) & (bot == -1)
     static = (top == -1) & (bot == -1) & (left == -1) & (right == -1)
 
     s = 5
 
-    top[grow & (top == -1)] = bot[grow & (top == -1)] + s
-    bot[grow & (bot == -1)] = bot[grow & (bot == -1)] + s
-    left[grow & (left == -1)] = bot[grow & (left == -1)] + s
-    right[grow & (right == -1)] = bot[grow & (right == -1)] + s
+    top[grow & (top == -1)] = top[grow & (top == -1)] + s
+    bot[grow & (bot == -1)] = top[grow & (bot == -1)] + s
+    left[grow & (left == -1)] = top[grow & (left == -1)] + s
+    right[grow & (right == -1)] = top[grow & (right == -1)] + s
 
-    top[decay & (top == -1)] = top[decay & (top == -1)] - s
-    bot[decay & (bot == -1)] = top[decay & (bot == -1)] - s
-    left[decay & (left == -1)] = top[decay & (left == -1)] - s
-    right[decay & (right == -1)] = top[decay & (right == -1)] - s
+    top[decay & (top == -1)] = bot[decay & (top == -1)] - s
+    bot[decay & (bot == -1)] = bot[decay & (bot == -1)] - s
+    left[decay & (left == -1)] = bot[decay & (left == -1)] - s
+    right[decay & (right == -1)] = bot[decay & (right == -1)] - s
 
     pc = (top + bot + left + right) / 4
     pc[pc > 255] = 255
@@ -102,8 +102,8 @@ if __name__ == "__main__":
     # zmin, ymin, xmin, electrode_label_level_pairs = 2736, 1831, 3413, [(1, 0.20), (2, 0.75)]
     # zmin, ymin, xmin, electrode_label_level_pairs = 1968, 1860, 3424, [(1, 0.20), (2, 0.95)]
     # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1800, 2990, [(1, 0.60)]
-    zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1800, 2990, [(1, 0.60)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1537, 3490, [(1, 0.65)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1800, 2990, [(1, 0.60)]
+    zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1537, 3490, [(1, 0.65)]
 
     dirname = f'/Users/yao/Desktop/full-scrolls/community-uploads/yao/scroll1/{zmin:05}_{ymin:05}_{xmin:05}/'
 
@@ -122,20 +122,20 @@ if __name__ == "__main__":
 
     electrode_temp = np.zeros_like(electrode)
 
-    # for label, level in electrode_label_level_pairs:
-    #     print('Processing electrode:', label)
-    #     mask_label = (electrode == label).astype(np.uint8)
+    for label, level in electrode_label_level_pairs:
+        print('Processing electrode:', label)
+        mask_label = (electrode == label).astype(np.uint8)
 
-    #     for z in range(d):
-    #         skeleton = skeletonize(mask_label[z])
-    #         electrode_temp[z][skeleton] = label
+        for z in range(d):
+            skeleton = skeletonize(mask_label[z])
+            electrode_temp[z][skeleton] = label
 
-    # testing label
-    for z in range(d):
-        center = (w//2, h//2)
-        theta = np.pi / 1000 * 250
-        condition = update_electrode_condition(electrode_temp[z], center, theta)
-        electrode_temp[z][condition] = 10
+    # # testing label
+    # for z in range(d):
+    #     center = (w//2, h//2)
+    #     theta = np.pi / 1000 * 250
+    #     condition = update_electrode_condition(electrode_temp[z], center, theta)
+    #     electrode_temp[z][condition] = 10
 
     electrode = electrode_temp
 
@@ -168,10 +168,10 @@ if __name__ == "__main__":
     # update potential
     plt.ion()
 
-    for i in range(100):
+    for i in range(10):
         # electrodes should remain constant
-        # for label, level in electrode_label_level_pairs:
-        #     potential[electrode == label] = level * 255
+        for label, level in electrode_label_level_pairs:
+            potential[electrode == label] = level * 255
         potential[electrode == 10] = 128
 
         m = False

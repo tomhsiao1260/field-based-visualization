@@ -2,53 +2,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 
-def update_trigger(potential, trigger, axes, cmap):
-    pc_pad = np.pad(potential, pad_width=1, mode='edge')
-    tc_pad = np.pad(trigger, pad_width=1, mode='edge')
-
-    tc = tc_pad[1:-1,  1:-1].copy()
-    pc = pc_pad[1:-1,  1:-1].copy()
-
-    count_zero_neighbors = (
-        (tc_pad[:-2, 1:-1] == 0).astype(int) +  # 上
-        (tc_pad[2:, 1:-1] == 0).astype(int) + # 下
-        (tc_pad[1:-1, :-2] == 0).astype(int) +  # 左
-        (tc_pad[1:-1, 2:] == 0).astype(int)     # 右
-    )
-
-    diff = pc_pad[:-2, 1:-1].copy() * (tc_pad[:-2, 1:-1] == 0).astype(int)
-    diff += pc_pad[2:, 1:-1] * (tc_pad[2:, 1:-1] == 0).astype(int)
-    diff += pc_pad[1:-1, :-2] * (tc_pad[1:-1, :-2] == 0).astype(int)
-    diff += pc_pad[1:-1,  2:] * (tc_pad[1:-1,  2:] == 0).astype(int)
-    diff /= count_zero_neighbors
-
-    # pc[tc == 0] = diff[tc == 0]
-    pc[tc > 0] = (diff + 10)[tc > 0]
-    pc[tc < 0] = (diff - 10)[tc < 0]
-
-    pc[count_zero_neighbors == 0] = potential[count_zero_neighbors == 0]
-
-    mask = (
-        (tc_pad[:-2, 1:-1] == 0) |  # 上
-        (tc_pad[2:, 1:-1] == 0) |   # 下
-        (tc_pad[1:-1, :-2] == 0) |  # 左
-        (tc_pad[1:-1, 2:] == 0)     # 右
-    )
-
-    tc[mask] = 0
-
-    return pc, tc
-
-def update_potential(potential, axes, cmap):
+def update_potential(potential):
     pc_pad = np.pad(potential, pad_width=1, mode='edge')
 
-    # pc = pc_pad[1:-1,  1:-1].copy()
-    pc = pc_pad[1:-1,  :-2].copy()
-    pc += pc_pad[1:-1,   2:]
-    pc += pc_pad[:-2, 1:-1]
-    pc += pc_pad[2:, 1:-1]
-    pc /= 4
+    center = pc_pad[1:-1, 1:-1].copy()
+    top = pc_pad[:-2, 1:-1].copy()
+    bot = pc_pad[2:, 1:-1].copy()
+    left = pc_pad[1:-1,  :-2].copy()
+    right = pc_pad[1:-1,   2:].copy()
 
+    pc = (top + bot + left + right) / 4
+
+    return pc
+
+def fix_boundary(potential):
     s = 0.9535
 
     pc[0, :] = s * (2 * pc[1, :] - pc[2, :]) + (1-s) * pc[1, :]
@@ -63,19 +30,52 @@ def update_potential(potential, axes, cmap):
 
     return pc
 
-def update_electrode_condition(x, y, theta):
-    x_center, y_center = 50, 50
+def fix_gradient(potential):
+    pc_pad = np.pad(potential, pad_width=1, mode='edge')
 
-    x_shifted = x - x_center
-    y_shifted = y - y_center
+    center = pc_pad[1:-1, 1:-1].copy()
+    top = pc_pad[:-2, 1:-1].copy()
+    bot = pc_pad[2:, 1:-1].copy()
+    left = pc_pad[1:-1,  :-2].copy()
+    right = pc_pad[1:-1,   2:].copy()
+
+    # local_max = np.maximum.reduce([top, bot, left, right])
+    # local_min = np.minimum.reduce([top, bot, left, right])
+    # gradient_range = local_max - local_min
+    # pc = np.where(gradient_range > 1, pc, center)
+
+    grad_top = center - top
+    grad_bot = center - bot
+    grad_left = center - left
+    grad_right = center - right
+
+    max_gradient = 1
+
+    # 限制梯度：若梯度超過 max_gradient，則進行修正
+    grad_top = np.where(grad_top > max_gradient, max_gradient, grad_top)
+    grad_bot = np.where(grad_bot > max_gradient, max_gradient, grad_bot)
+    grad_left = np.where(grad_left > max_gradient, max_gradient, grad_left)
+    grad_right = np.where(grad_right > max_gradient, max_gradient, grad_right)
+
+    # 修正中心值：根據調整後的梯度進行平滑更新
+    pc = center - 0.5 * (
+        (grad_top + grad_bot + grad_left + grad_right) / 4
+    )
+
+    return pc
+
+def update_electrode_condition(mask, center=(0,0), theta=0):
+    xc, yc = center
+    h, w = mask.shape
+    y, x = np.ogrid[:h, :w]
+
+    x_shifted = x - xc
+    y_shifted = y - yc
 
     x_rotated = np.cos(theta) * x_shifted - np.sin(theta) * y_shifted
     y_rotated = np.sin(theta) * x_shifted + np.cos(theta) * y_shifted
 
-    x_rotated += x_center
-    y_rotated += y_center
-
-    condition = (30 <= x_rotated) & (x_rotated < 70) & (45 <= y_rotated) & (y_rotated < 55)
+    condition = (-w//4 <= x_rotated) & (x_rotated < w//4) & (-2 <= y_rotated) & (y_rotated < 2)
 
     return condition
 
@@ -86,19 +86,20 @@ if __name__ == "__main__":
     for ax in axes: ax.axis('off')
 
     boundary_mask = np.zeros((100, 100), dtype=bool)
+    boundary_mask2 = np.zeros((100, 100), dtype=bool)
     h, w = boundary_mask.shape
 
+    theta = np.pi / 1000 * 0
+    condition = update_electrode_condition(boundary_mask, (w//2, h//2), theta)
+    boundary_mask[condition] = True
+    theta = np.pi / 1000 * 0
+    condition = update_electrode_condition(boundary_mask, (w//2, 3*h//4), theta)
+    boundary_mask2[condition] = True
+
     y, x = np.ogrid[:h, :w]
-
-    condition_electrode = (30 < x) & (x < 70) & (45 < y) & (y < 55)
-    boundary_mask[condition_electrode] = True
-
     potential = np.zeros_like(boundary_mask, dtype=float)
     potential[(0 <= x) & (x < 100) & (0 <= y) & (y < 50)] = 255
     potential[(0 <= x) & (x < 100) & (50 <= y) & (y < 100)] = 0
-    # potential[(100 <= x + y)] = 255
-    # potential[(100 > x + y)] = 0
-    potential[boundary_mask > 0] = 128
 
     colors = ['#000000', '#ffffff'] * 20
     cmap = ListedColormap(colors)
@@ -109,21 +110,25 @@ if __name__ == "__main__":
     # update potential
     plt.ion()
 
-    for i in range(5000):
-        if (i > 0):
-            theta = np.pi / 1000 * 500
-            condition = update_electrode_condition(x, y, theta)
+    for i in range(1000):
+        # theta = np.pi / 1000 * i
+        # condition = update_electrode_condition(boundary_mask, (w//2, h//2), theta)
+        # boundary_mask[:,:] = False
+        # boundary_mask[condition] = True
 
-            boundary_mask[:, :] = False
-            boundary_mask[condition] = True
-            pc[boundary_mask] = 128
+        potential[boundary_mask] = 255-50
+        # potential[boundary_mask2] = 50
 
-        pc = update_potential(potential, axes, cmap)
-        pc[boundary_mask] = potential[boundary_mask]
+        # pc = update_potential(potential)
+
+        if(i>-1): pc = fix_gradient(potential)
+
+        pc = fix_boundary(pc)
+
         potential = pc
 
-        # if (i%1 == 0):
-        if (i%100 == 0 and i > 200):
+        if (i%10 == 0):
+        # if (i%100 == 0 and i > 200):
             print(i)
             axes[0].imshow(potential, cmap=cmap)
             axes[1].imshow(potential, cmap="gray")

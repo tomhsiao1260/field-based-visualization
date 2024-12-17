@@ -367,8 +367,6 @@ if __name__ == "__main__":
                 axes[4].imshow(flatten[d0//2], cmap="gray")
                 axes[9].imshow(flatten[:, :, w0//2], cmap='gray')
 
-                nrrd.write(os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_flatten.nrrd"), flatten.astype(np.uint8))
-                tifffile.imwrite(os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_flatten.tif"), flatten.astype(np.uint8))
                 nrrd.write(os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_potential.nrrd"), potential.astype(np.uint8))
 
             plt.pause(0.001)

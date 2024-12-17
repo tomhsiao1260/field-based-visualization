@@ -7,9 +7,17 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from app_alpha import update_flatten
 
+def add_rect(xc, yc):
+    x, y, w, h = xc-35, yc-35, 70, 70
+    rect = Rectangle((x, y), w, h, linewidth=1, edgecolor='r', facecolor='none')
+    return rect
+
 if __name__ == "__main__":
     zmin, ymin, xmin = 5049, 1765, 3380
-    zf, yf, xf = 200, 367, 698
+    zf, yf, xf = 5249, 2132, 4078
+
+    zf, yf, xf = zf - zmin, yf - ymin, xf - xmin
+    # zf, yf, xf = 200, 367, 698
 
     dirname = f'/Users/yao/Desktop/full-scrolls/community-uploads/yao/scroll1/{zmin:05}_{ymin:05}_{xmin:05}/'
 
@@ -42,28 +50,50 @@ if __name__ == "__main__":
     zo, yo, xo = flat_coords[zf * 256//d][yf * 256//h][xf * 256//w]
     zo, yo, xo = zo * d//256, yo * h//256, xo * w//256
 
-    print(f'offset (z, y, x): {zmin} {ymin} {xmin}')
-    print(f'original (z, y, x): {zo} {yo} {xo}')
-    print(f'flatten (z, y, x): {zf} {yf} {xf}')
+    print(f'original (z, y, x): {zmin+zo} {ymin+yo} {xmin+xo}')
+    print(f'flatten (z, y, x): {zmin+zf} {ymin+yf} {xmin+xf}')
 
     ### plot
-    fig, axes = plt.subplots(1, 2, figsize=(6, 3))
+    fig, axes = plt.subplots(2, 3, figsize=(6, 4))
+
+    axes = axes.ravel()
     for ax in axes: ax.axis('off')
 
-    axes[0].set_title("Original")
-    axes[0].imshow(volume[zo], cmap='gray')
+    # draw xyz slices
+    axes[0].set_title(f"zo {zmin+zo}")
+    axes[1].set_title(f"yo {ymin+yo}")
+    axes[2].set_title(f"xo {xmin+xo}")
 
-    axes[1].set_title("Flatten")
-    axes[1].imshow(flatten[zf], cmap='gray')
+    axes[0].imshow(volume[zo, :, :], cmap='gray')
+    axes[1].imshow(volume[:, yo, :], cmap='gray')
+    axes[2].imshow(volume[:, :, xo], cmap='gray')
 
-    x, y, w, h = xo-25, yo-25, 50, 50
-    rect = Rectangle((x, y), w, h, linewidth=2, edgecolor='r', facecolor='none')
-    axes[0].add_patch(rect)
+    axes[3].set_title(f"zf {zmin+zf}")
+    axes[4].set_title(f"yf {ymin+yf}")
+    axes[5].set_title(f"xf {xmin+xf}")
 
-    x, y, w, h = xf-25, yf-25, 50, 50
-    rect = Rectangle((x, y), w, h, linewidth=2, edgecolor='r', facecolor='none')
-    axes[1].add_patch(rect)
+    axes[3].imshow(flatten[zf, :, :], cmap='gray')
+    axes[4].imshow(flatten[:, yf, :], cmap='gray')
+    axes[5].imshow(flatten[:, :, xf], cmap='gray')
 
+    # draw rectangle
+    rect_z = add_rect(xo, yo)
+    rect_y = add_rect(xo, zo)
+    rect_x = add_rect(yo, zo)
+
+    axes[0].add_patch(rect_z)
+    axes[1].add_patch(rect_y)
+    axes[2].add_patch(rect_x)
+
+    rect_z = add_rect(xf, yf)
+    rect_y = add_rect(xf, zf)
+    rect_x = add_rect(yf, zf)
+
+    axes[3].add_patch(rect_z)
+    axes[4].add_patch(rect_y)
+    axes[5].add_patch(rect_x)
+
+    plt.tight_layout()
     plt.show()
 
 

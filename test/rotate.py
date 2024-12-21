@@ -58,7 +58,7 @@ def fix_gradient(potential):
     grad_right = np.where(grad_right > max_gradient, max_gradient, grad_right)
 
     # 修正中心值：根據調整後的梯度進行平滑更新
-    pc = center - 0.5 * (
+    pc = center - 0.99 * (
         (grad_top + grad_bot + grad_left + grad_right) / 4
     )
 

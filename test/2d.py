@@ -31,7 +31,26 @@ def down_sampling(array, rescale=(1,1,1), mean=True):
 
     return downscaled
 
-def update_potential(potential, axes, cmap, m=False):
+def update_potential(potential):
+    pc_pad = np.pad(potential, pad_width=1, mode='edge')
+
+    center = pc_pad[1:-1, 1:-1].copy()
+    top = pc_pad[:-2, 1:-1].copy()
+    bot = pc_pad[2:, 1:-1].copy()
+    left = pc_pad[1:-1,  :-2].copy()
+    right = pc_pad[1:-1,   2:].copy()
+
+    static = (top == -1) & (bot == -1) & (left == -1) & (right == -1)
+
+    pc = (top + bot + left + right) / 4
+
+    pc[pc > 255] = 255
+    pc[pc < 0] = 0
+    pc[static] = -1
+
+    return pc
+
+def fix_gradient(potential):
     pc_pad = np.pad(potential, pad_width=1, mode='edge')
 
     center = pc_pad[1:-1, 1:-1].copy()
@@ -46,17 +65,17 @@ def update_potential(potential, axes, cmap, m=False):
 
     s = 5
 
+    center[grow & (center == -1)] = center[grow & (center == -1)] + s
     top[grow & (top == -1)] = top[grow & (top == -1)] + s
     bot[grow & (bot == -1)] = top[grow & (bot == -1)] + s
     left[grow & (left == -1)] = top[grow & (left == -1)] + s
     right[grow & (right == -1)] = top[grow & (right == -1)] + s
 
+    center[decay & (center == -1)] = center[decay & (center == -1)] - s
     top[decay & (top == -1)] = bot[decay & (top == -1)] - s
     bot[decay & (bot == -1)] = bot[decay & (bot == -1)] - s
     left[decay & (left == -1)] = bot[decay & (left == -1)] - s
     right[decay & (right == -1)] = bot[decay & (right == -1)] - s
-
-    pc = (top + bot + left + right) / 4
 
     grad_top = center - top
     grad_bot = center - bot
@@ -65,14 +84,12 @@ def update_potential(potential, axes, cmap, m=False):
 
     max_gradient = 2
 
-    # 限制梯度：若梯度超過 max_gradient，則進行修正
     grad_top = np.where(grad_top > max_gradient, max_gradient, grad_top)
     grad_bot = np.where(grad_bot > max_gradient, max_gradient, grad_bot)
     grad_left = np.where(grad_left > max_gradient, max_gradient, grad_left)
     grad_right = np.where(grad_right > max_gradient, max_gradient, grad_right)
 
-    # 修正中心值：根據調整後的梯度進行平滑更新
-    pc = center - 0.5 * (
+    pc = center - 1 * (
         (grad_top + grad_bot + grad_left + grad_right) / 4
     )
 
@@ -80,6 +97,11 @@ def update_potential(potential, axes, cmap, m=False):
     pc[pc < 0] = 0
     pc[static] = -1
 
+    s = 0.9535
+
+    return pc
+
+def fix_boundary(potential, m=False):
     s = 0.9535
 
     if m:
@@ -118,11 +140,11 @@ if __name__ == "__main__":
     # zmin, ymin, xmin, electrode_label_level_pairs = 4281, 2533, 3380, [(2, 0.30)]
     # zmin, ymin, xmin, electrode_label_level_pairs = 4281, 1765, 3380, [(1, 0.50), (2, 0.95)]
     # zmin, ymin, xmin, electrode_label_level_pairs = 3513, 1900, 3400, [(1, 0.15), (2, 0.70)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 2736, 1831, 3413, [(1, 0.20), (2, 0.75)]
+    zmin, ymin, xmin, electrode_label_level_pairs = 2736, 1831, 3413, [(1, 0.20), (2, 0.75)]
     # zmin, ymin, xmin, electrode_label_level_pairs = 1968, 1860, 3424, [(1, 0.20), (2, 0.95)]
     # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1800, 2990, [(1, 0.60)]
     # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1800, 2990, [(1, 0.60)]
-    zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1537, 3490, [(1, 0.65)]
+    # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1537, 3490, [(1, 0.65)]
 
     dirname = f'/Users/yao/Desktop/full-scrolls/community-uploads/yao/scroll1/{zmin:05}_{ymin:05}_{xmin:05}/'
 
@@ -187,15 +209,18 @@ if __name__ == "__main__":
     # update potential
     plt.ion()
 
-    for i in range(1000):
+    for i in range(5000):
         # electrodes should remain constant
         for label, level in electrode_label_level_pairs:
             potential[electrode == label] = level * 255
         potential[electrode == 10] = 128
 
-        m = False
-        if (i>200): m = True
-        pc = update_potential(potential[d//2, :, :], axes, cmap, m)
+        if (i<1000 or i%2==0): pc = fix_gradient(potential[d//2, :, :])
+        if (i>=1000 and i%2!=0): pc = update_potential(potential[d//2, :, :])
+
+        if (i<1000): pc = fix_boundary(pc, False)
+        if (i>=1000): pc = fix_boundary(pc, True)
+
         potential[d//2, :, :] = pc
 
         a = (potential == -1).astype(bool)[d//2, :, :]
@@ -208,7 +233,7 @@ if __name__ == "__main__":
 
             plt.pause(0.01)
 
-        if (i%2 == 0 and i < 100):
+        if (i%10 == 0 and i < 100):
             print(i)
             axes[1].imshow(potential[d//2, :, :], cmap=cmap)
             axes[3].imshow(potential[d//2, :, :], cmap="gray")

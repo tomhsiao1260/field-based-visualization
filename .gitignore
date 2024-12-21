@@ -2,6 +2,8 @@ env
 .DS_Store
 __pycache__
 
+config.py
+
 *tif
 *nrrd
 *obj

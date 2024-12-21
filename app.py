@@ -4,6 +4,7 @@
 # https://dl.ash2txt.org/community-uploads/yao/scroll1/03513_01900_03400/
 
 import os
+import sys
 import cv2
 import nrrd
 import random
@@ -15,6 +16,10 @@ import matplotlib.pyplot as plt
 from skimage.morphology import skeletonize
 from matplotlib.colors import ListedColormap
 from concurrent.futures import ThreadPoolExecutor
+
+# see config_template.py & generate a config.py file
+from config import zmin, ymin, xmin
+from config import dirname, electrode_label_level_pairs
 
 def down_sampling(array, rescale=(1,1,1), mean=True):
     rz, ry, rx = rescale
@@ -185,22 +190,6 @@ def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
 
 if __name__ == "__main__":
     ### path & params
-
-    # electrode_label_level_pairs: [(label0, level0), (label1, level1), ...]
-    # Label: select value in mask.nrrd (that you want it to become electrode)
-    # Level: electrode horizontal position after flattening (between 0:top ~ 1:bottom)
-
-    # zmin, ymin, xmin, electrode_label_level_pairs = 5049, 2533, 3380, [(2, 0.60)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 5049, 1765, 3380, [(1, 0.70)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 4281, 2533, 3380, [(2, 0.30)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 4281, 1765, 3380, [(1, 0.50), (2, 0.95)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 3513, 1900, 3400, [(1, 0.15), (2, 0.70)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 2736, 1831, 3413, [(1, 0.20), (2, 0.75)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 1968, 1860, 3424, [(1, 0.20), (2, 0.95)]
-    zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1800, 2990, [(1, 0.60)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1537, 3490, [(1, 0.65)]
-
-    dirname = f'/Users/yao/Desktop/full-scrolls/community-uploads/yao/scroll1/{zmin:05}_{ymin:05}_{xmin:05}/'
 
     volume_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_volume.nrrd')
     electrode_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_mask.nrrd')

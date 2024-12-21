@@ -1,3 +1,6 @@
+# original points -> flatten points
+# flatten points -> original points
+
 import os
 import sys
 import nrrd

@@ -190,7 +190,6 @@ def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
 
 if __name__ == "__main__":
     ### path & params
-
     volume_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_volume.nrrd')
     electrode_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_mask.nrrd')
     conductor_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_fiber.nrrd')

@@ -8,6 +8,7 @@ import sys
 import cv2
 import nrrd
 import random
+import argparse
 import tifffile
 import numpy as np
 import networkx as nx
@@ -189,18 +190,26 @@ def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
     return points_array
 
 if __name__ == "__main__":
-    ### path & params
+    ### params
+    parser = argparse.ArgumentParser(description='potential calculation')
+    parser.add_argument('--plot', action="store_true", help='plot the potential')
+    parser.add_argument('--num_worker', type=int, default=8, help='worker numbers')
+    args = parser.parse_args()
+
+    num_worker, plot = args.num_worker, args.plot
+    rescale = (3, 3, 3)
+
+    ### path
     volume_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_volume.nrrd')
     electrode_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_mask.nrrd')
     conductor_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_fiber.nrrd')
 
-    rescale, num_worker = (3, 3, 3), 8
-
     ### plot init
-    fig, axes = plt.subplots(2, 5, figsize=(10, 4))
+    if (plot):
+        fig, axes = plt.subplots(2, 5, figsize=(10, 4))
 
-    axes = axes.ravel()
-    for ax in axes: ax.axis('off')
+        axes = axes.ravel()
+        for ax in axes: ax.axis('off')
 
     ### load volume
     volume_origin, header = nrrd.read(volume_dir)
@@ -224,22 +233,24 @@ if __name__ == "__main__":
 
     electrode = electrode_temp
 
-    axes[0].set_title("Volume")
-    axes[0].imshow(volume[d//2, :, :], cmap='gray')
-    axes[0].contour(electrode[d//2, :, :] * 255, colors='blue', linewidths=0.5)
-    axes[5].imshow(volume[:, :, w//2], cmap='gray')
-    axes[5].contour(electrode[:, :, w//2] * 255, colors='blue', linewidths=0.5)
+    if (plot):
+        axes[0].set_title("Volume")
+        axes[0].imshow(volume[d//2, :, :], cmap='gray')
+        axes[0].contour(electrode[d//2, :, :] * 255, colors='blue', linewidths=0.5)
+        axes[5].imshow(volume[:, :, w//2], cmap='gray')
+        axes[5].contour(electrode[:, :, w//2] * 255, colors='blue', linewidths=0.5)
 
     ### load conductor
     conductor, header = nrrd.read(conductor_dir)
     conductor = np.asarray(conductor).astype(bool)
     conductor = down_sampling(conductor, rescale, False)
 
-    axes[1].set_title("Conductor")
-    axes[1].imshow(conductor[d//2, :, :], cmap='gray')
-    axes[1].contour(electrode[d//2, :, :] * 255, colors='blue', linewidths=0.5)
-    axes[6].imshow(conductor[:, :, w//2], cmap='gray')
-    axes[6].contour(electrode[:, :, w//2] * 255, colors='blue', linewidths=0.5)
+    if (plot):
+        axes[1].set_title("Conductor")
+        axes[1].imshow(conductor[d//2, :, :], cmap='gray')
+        axes[1].contour(electrode[d//2, :, :] * 255, colors='blue', linewidths=0.5)
+        axes[6].imshow(conductor[:, :, w//2], cmap='gray')
+        axes[6].contour(electrode[:, :, w//2] * 255, colors='blue', linewidths=0.5)
 
     ### conductor graph
     conductor_z_dir = os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_conductor_z.nrrd")
@@ -265,9 +276,10 @@ if __name__ == "__main__":
         conductor_x = conductor_x.transpose(2, 1, 0)
         nrrd.write(conductor_x_dir, conductor_x)
 
-    axes[2].set_title("Discrete Conductor")
-    axes[2].imshow(conductor_z[d//2, :, :], cmap="nipy_spectral", origin="upper")
-    axes[7].imshow(conductor_x[:, :, w//2], cmap="nipy_spectral", origin="upper")
+    if (plot):
+        axes[2].set_title("Discrete Conductor")
+        axes[2].imshow(conductor_z[d//2, :, :], cmap="nipy_spectral", origin="upper")
+        axes[7].imshow(conductor_x[:, :, w//2], cmap="nipy_spectral", origin="upper")
 
     # potential (init)
     potential = np.zeros_like(conductor_z, dtype=float)
@@ -293,8 +305,9 @@ if __name__ == "__main__":
 
     d, h, w = potential.shape
 
-    axes[2].imshow(conductor_z[d//2, :, :], cmap="nipy_spectral", origin="upper")
-    axes[7].imshow(conductor_x[:, :, w//2], cmap="nipy_spectral", origin="upper")
+    if (plot):
+        axes[2].imshow(conductor_z[d//2, :, :], cmap="nipy_spectral", origin="upper")
+        axes[7].imshow(conductor_x[:, :, w//2], cmap="nipy_spectral", origin="upper")
 
     # update potential
     colors = ['#000000', '#ffffff'] * 20
@@ -308,7 +321,7 @@ if __name__ == "__main__":
     for x in range(w):
         counts_x[x] = np.bincount(conductor_x[:, :, x].flatten(), minlength=256)
 
-    plt.ion()
+    if (plot): plt.ion()
     for i in range(1501):
         # electrodes should remain constant
         for label, level in electrode_label_level_pairs:
@@ -340,9 +353,10 @@ if __name__ == "__main__":
         if (i%10 == 0):
             print('frame ', i)
 
-            axes[3].set_title("Potential")
-            axes[3].imshow(potential[d//2, :, :], cmap=cmap)
-            axes[8].imshow(potential[:, :, w//2], cmap=cmap)
+            if (plot):
+                axes[3].set_title("Potential")
+                axes[3].imshow(potential[d//2, :, :], cmap=cmap)
+                axes[8].imshow(potential[:, :, w//2], cmap=cmap)
 
             # save the flatten result
             if (i%500 == 0 and i != 0):
@@ -351,16 +365,18 @@ if __name__ == "__main__":
                 flatten = update_flatten(volume_origin, potential)
                 d0, h0, w0 = flatten.shape
 
-                axes[4].set_title("Flatten")
-                axes[4].imshow(flatten[d0//2], cmap="gray")
-                axes[9].imshow(flatten[:, :, w0//2], cmap='gray')
+                if (plot):
+                    axes[4].set_title("Flatten")
+                    axes[4].imshow(flatten[d0//2], cmap="gray")
+                    axes[9].imshow(flatten[:, :, w0//2], cmap='gray')
 
                 nrrd.write(os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_potential.nrrd"), potential.astype(np.uint8))
 
-            plt.pause(0.001)
-    plt.ioff()
+            if (plot): plt.pause(0.001)
+    if (plot): plt.ioff()
 
     print('complete')
-    plt.tight_layout()
-    plt.show()
+    if (plot):
+        plt.tight_layout()
+        plt.show()
 

@@ -66,10 +66,22 @@ def generate_graph(skel):
                         G.add_edge((y, x), (sy, sx))
 
     # remove small groups
-    components = [c for c in nx.connected_components(G) if len(c) >= 3]
+    components = [c for c in nx.connected_components(G) if len(c) >= 7]
     G_filtered = G.subgraph(nodes for component in components for nodes in component).copy()
 
     return G_filtered, components
+
+# Edge detector along z-axis
+def generate_edge(volume):
+    d, h, w = volume.shape
+    blur = np.zeros_like(volume)
+    edge = np.zeros_like(volume, dtype=bool)
+
+    for z in range(d):
+        blur[z, :, :] = cv2.GaussianBlur(volume[z, :, :], (11, 11), 0)
+        edge[z, :, :] = cv2.Canny(blur[z, :, :], threshold1=90, threshold2=100)
+
+    return edge
 
 # Write graph into mask
 def generate_mask(skeleton, num_worker=5):
@@ -194,9 +206,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='potential calculation')
     parser.add_argument('--plot', action="store_true", help='plot the potential')
     parser.add_argument('--num_worker', type=int, default=8, help='worker numbers')
+    parser.add_argument('--auto_conductor', action="store_true", help='auto generate the conductor mask')
     args = parser.parse_args()
 
-    num_worker, plot = args.num_worker, args.plot
+    num_worker, plot, auto_conductor = args.num_worker, args.plot, args.auto_conductor
     rescale = (3, 3, 3)
 
     ### path
@@ -207,7 +220,6 @@ if __name__ == "__main__":
     ### plot init
     if (plot):
         fig, axes = plt.subplots(2, 5, figsize=(10, 4))
-
         axes = axes.ravel()
         for ax in axes: ax.axis('off')
 
@@ -241,15 +253,20 @@ if __name__ == "__main__":
         axes[5].contour(electrode[:, :, w//2] * 255, colors='blue', linewidths=0.5)
 
     ### load conductor
-    conductor, header = nrrd.read(conductor_dir)
-    conductor = np.asarray(conductor).astype(bool)
-    conductor = down_sampling(conductor, rescale, False)
+    if auto_conductor:
+        conductor_zo = generate_edge(volume)
+        conductor_xo = generate_edge(volume.transpose(2, 1, 0)).transpose(2, 1, 0)
+    else:
+        conductor_zo, header = nrrd.read(conductor_dir)
+        conductor_zo = np.asarray(conductor_zo).astype(bool)
+        conductor_zo = down_sampling(conductor_zo, rescale, False)
+        conductor_xo = conductor_zo.copy()
 
     if (plot):
         axes[1].set_title("Conductor")
-        axes[1].imshow(conductor[d//2, :, :], cmap='gray')
+        axes[1].imshow(conductor_zo[d//2, :, :], cmap='gray')
+        axes[6].imshow(conductor_xo[:, :, w//2], cmap='gray')
         axes[1].contour(electrode[d//2, :, :] * 255, colors='blue', linewidths=0.5)
-        axes[6].imshow(conductor[:, :, w//2], cmap='gray')
         axes[6].contour(electrode[:, :, w//2] * 255, colors='blue', linewidths=0.5)
 
     ### conductor graph
@@ -260,8 +277,9 @@ if __name__ == "__main__":
     if os.path.exists(conductor_z_dir):
         conductor_z, _ = nrrd.read(conductor_z_dir)
     else:
-        conductor_z = np.zeros_like(conductor)
-        for z in range(d): conductor_z[z, :, :] = skeletonize(conductor[z, :, :])
+        conductor_z = np.zeros_like(volume)
+        for z in range(d): conductor_z[z, :, :] = skeletonize(conductor_zo[z, : , :])
+
         conductor_z = generate_mask(conductor_z, num_worker)
         nrrd.write(conductor_z_dir, conductor_z)
 
@@ -269,11 +287,10 @@ if __name__ == "__main__":
     if os.path.exists(conductor_x_dir):
         conductor_x, _ = nrrd.read(conductor_x_dir)
     else:
-        conductor_x = np.zeros_like(conductor)
-        for x in range(w): conductor_x[:, :, x] = skeletonize(conductor[:, :, x])
-        s = conductor_x.transpose(2, 1, 0)
-        conductor_x = generate_mask(s, num_worker)
-        conductor_x = conductor_x.transpose(2, 1, 0)
+        conductor_x = np.zeros_like(volume)
+        for x in range(w): conductor_x[:, :, x] = skeletonize(conductor_xo[:, :, x])
+
+        conductor_x = generate_mask(conductor_x.transpose(2, 1, 0), num_worker).transpose(2, 1, 0)
         nrrd.write(conductor_x_dir, conductor_x)
 
     if (plot):

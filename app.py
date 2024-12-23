@@ -66,7 +66,7 @@ def generate_graph(skel):
                         G.add_edge((y, x), (sy, sx))
 
     # remove small groups
-    components = [c for c in nx.connected_components(G) if len(c) >= 7]
+    components = [c for c in nx.connected_components(G) if len(c) >= 3]
     G_filtered = G.subgraph(nodes for component in components for nodes in component).copy()
 
     return G_filtered, components
@@ -78,7 +78,7 @@ def generate_edge(volume):
     edge = np.zeros_like(volume, dtype=bool)
 
     for z in range(d):
-        blur[z, :, :] = cv2.GaussianBlur(volume[z, :, :], (11, 11), 0)
+        blur[z, :, :] = cv2.GaussianBlur(volume[z, :, :], (7, 7), 0)
         edge[z, :, :] = cv2.Canny(blur[z, :, :], threshold1=90, threshold2=100)
 
     return edge
@@ -210,7 +210,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     num_worker, plot, auto_conductor = args.num_worker, args.plot, args.auto_conductor
-    rescale = (3, 3, 3)
+
+    if auto_conductor:
+        rescale_a, rescale_b = (5, 5, 5), (1, 1, 1)
+    else:
+        rescale_a, rescale_b = (3, 3, 3), (2, 2, 2)
 
     ### path
     volume_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_volume.nrrd')
@@ -225,13 +229,13 @@ if __name__ == "__main__":
 
     ### load volume
     volume_origin, header = nrrd.read(volume_dir)
-    volume = down_sampling(volume_origin, rescale)
+    volume = down_sampling(volume_origin, rescale_a)
     d, h, w = volume.shape
 
     ### load electrode
     electrode, header = nrrd.read(electrode_dir)
     electrode = np.asarray(electrode)
-    electrode = down_sampling(electrode, rescale, False)
+    electrode = down_sampling(electrode, rescale_a, False)
 
     electrode_temp = np.zeros_like(electrode)
 
@@ -257,9 +261,11 @@ if __name__ == "__main__":
         conductor_zo = generate_edge(volume)
         conductor_xo = generate_edge(volume.transpose(2, 1, 0)).transpose(2, 1, 0)
     else:
+        if not os.path.exists(conductor_dir): sys.exit('conductor not found, please use --auto_conductor instead')
+
         conductor_zo, header = nrrd.read(conductor_dir)
         conductor_zo = np.asarray(conductor_zo).astype(bool)
-        conductor_zo = down_sampling(conductor_zo, rescale, False)
+        conductor_zo = down_sampling(conductor_zo, rescale_a, False)
         conductor_xo = conductor_zo.copy()
 
     if (plot):
@@ -310,15 +316,14 @@ if __name__ == "__main__":
     boundary[:, -1:, :] = True
 
     # rescale again
-    rescale = (2, 2, 2)
-    potential = down_sampling(potential, rescale)
-    electrode = down_sampling(electrode, rescale, False)
-    boundary = down_sampling(boundary, rescale, False)
+    potential = down_sampling(potential, rescale_b)
+    electrode = down_sampling(electrode, rescale_b, False)
+    boundary = down_sampling(boundary, rescale_b, False)
 
-    conductor_x = down_sampling(conductor_x, (2, 2, 1), False)
-    conductor_z = down_sampling(conductor_z, (1, 2, 2), False)
-    conductor_x = conductor_x[:, :, ::2]
-    conductor_z = conductor_z[::2, :, :]
+    conductor_x = down_sampling(conductor_x, (rescale_b[0], rescale_b[1], 1), False)
+    conductor_z = down_sampling(conductor_z, (1, rescale_b[1], rescale_b[2]), False)
+    conductor_x = conductor_x[:, :, ::rescale_b[2]]
+    conductor_z = conductor_z[::rescale_b[0], :, :]
 
     d, h, w = potential.shape
 

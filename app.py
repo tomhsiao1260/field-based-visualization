@@ -19,8 +19,9 @@ from matplotlib.colors import ListedColormap
 from concurrent.futures import ThreadPoolExecutor
 
 # see config_template.py & generate a config.py file
-from config import zmin, ymin, xmin
-from config import dirname, electrode_label_level_pairs
+from config import electrode_label_level_pairs
+from config import volume_dir, electrode_dir, conductor_dir
+from config import conductor_x_dir, conductor_z_dir, potential_dir
 
 def down_sampling(array, rescale=(1,1,1), mean=True):
     rz, ry, rx = rescale
@@ -216,11 +217,6 @@ if __name__ == "__main__":
     else:
         rescale_a, rescale_b = (3, 3, 3), (2, 2, 2)
 
-    ### path
-    volume_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_volume.nrrd')
-    electrode_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_mask.nrrd')
-    conductor_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_fiber.nrrd')
-
     ### plot init
     if (plot):
         fig, axes = plt.subplots(2, 5, figsize=(10, 4))
@@ -276,8 +272,6 @@ if __name__ == "__main__":
         axes[6].contour(electrode[:, :, w//2] * 255, colors='blue', linewidths=0.5)
 
     ### conductor graph
-    conductor_z_dir = os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_conductor_z.nrrd")
-    conductor_x_dir = os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_conductor_x.nrrd")
 
     # along z
     if os.path.exists(conductor_z_dir):
@@ -392,7 +386,7 @@ if __name__ == "__main__":
                     axes[4].imshow(flatten[d0//2], cmap="gray")
                     axes[9].imshow(flatten[:, :, w0//2], cmap='gray')
 
-                nrrd.write(os.path.join(dirname, f"{zmin:05}_{ymin:05}_{xmin:05}_potential.nrrd"), potential.astype(np.uint8))
+                nrrd.write(potential_dir, potential.astype(np.uint8))
 
             if (plot): plt.pause(0.001)
     if (plot): plt.ioff()

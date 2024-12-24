@@ -209,7 +209,7 @@ if __name__ == "__main__":
     # update potential
     plt.ion()
 
-    for i in range(5000):
+    for i in range(2000):
         # electrodes should remain constant
         for label, level in electrode_label_level_pairs:
             potential[electrode == label] = level * 255
@@ -218,7 +218,7 @@ if __name__ == "__main__":
         if (i<1000 or i%2==0): pc = fix_gradient(potential[d//2, :, :])
         if (i>=1000 and i%2!=0): pc = update_potential(potential[d//2, :, :])
 
-        if (i<1000): pc = fix_boundary(pc, False)
+        if (i<1000): pc = fix_boundary(pc, False) 
         if (i>=1000): pc = fix_boundary(pc, True)
 
         potential[d//2, :, :] = pc

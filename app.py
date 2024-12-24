@@ -18,7 +18,7 @@ from skimage.morphology import skeletonize
 from matplotlib.colors import ListedColormap
 from concurrent.futures import ThreadPoolExecutor
 
-# see config_template.py & generate a config.py file
+# see config_template.py & generate a config.py file (version 0)
 from config import electrode_label_level_pairs
 from config import volume_dir, electrode_dir, conductor_dir
 from config import conductor_x_dir, conductor_z_dir, potential_dir

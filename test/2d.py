@@ -6,6 +6,10 @@ import matplotlib.pyplot as plt
 from skimage.morphology import skeletonize
 from matplotlib.colors import ListedColormap
 
+# see config_template.py & generate a config.py file (version 0)
+from config import electrode_label_level_pairs
+from config import volume_dir, electrode_dir
+
 def down_sampling(array, rescale=(1,1,1), mean=True):
     rz, ry, rx = rescale
     nz, ny, nx = array.shape
@@ -42,11 +46,21 @@ def update_potential(potential):
 
     static = (top == -1) & (bot == -1) & (left == -1) & (right == -1)
 
+    top[top == -1] = center[top == -1]
+    bot[bot == -1] = center[bot == -1]
+    left[left == -1] = center[left == -1]
+    right[right == -1] = center[right == -1]
+
     pc = (top + bot + left + right) / 4
 
-    pc[pc > 255] = 255
-    pc[pc < 0] = 0
+    # pc[pc > 255] = 255
+    # pc[pc < 0] = 0
     pc[static] = -1
+
+    # pc[0, :] = pc[1, :]
+    # pc[-1, :] = pc[-2, :]
+    # pc[:, 0] = pc[:, 1]
+    # pc[:, -1] = pc[:, -2]
 
     return pc
 
@@ -63,57 +77,54 @@ def fix_gradient(potential):
     grow = (top != -1) & (bot == -1)
     static = (top == -1) & (bot == -1) & (left == -1) & (right == -1)
 
-    s = 5
+    s = 3
 
-    center[grow & (center == -1)] = center[grow & (center == -1)] + s
+    center[grow & (center == -1)] = top[grow & (center == -1)] + s
     top[grow & (top == -1)] = top[grow & (top == -1)] + s
     bot[grow & (bot == -1)] = top[grow & (bot == -1)] + s
     left[grow & (left == -1)] = top[grow & (left == -1)] + s
     right[grow & (right == -1)] = top[grow & (right == -1)] + s
 
-    center[decay & (center == -1)] = center[decay & (center == -1)] - s
+    center[decay & (center == -1)] = bot[decay & (center == -1)] - s
     top[decay & (top == -1)] = bot[decay & (top == -1)] - s
     bot[decay & (bot == -1)] = bot[decay & (bot == -1)] - s
     left[decay & (left == -1)] = bot[decay & (left == -1)] - s
     right[decay & (right == -1)] = bot[decay & (right == -1)] - s
 
-    grad_top = center - top
-    grad_bot = center - bot
-    grad_left = center - left
-    grad_right = center - right
+    top[top == -1] = center[top == -1]
+    bot[bot == -1] = center[bot == -1]
+    left[left == -1] = center[left == -1]
+    right[right == -1] = center[right == -1]
 
-    max_gradient = 2
+    pc = (top + bot + left + right) / 4
 
-    grad_top = np.where(grad_top > max_gradient, max_gradient, grad_top)
-    grad_bot = np.where(grad_bot > max_gradient, max_gradient, grad_bot)
-    grad_left = np.where(grad_left > max_gradient, max_gradient, grad_left)
-    grad_right = np.where(grad_right > max_gradient, max_gradient, grad_right)
-
-    pc = center - 1 * (
-        (grad_top + grad_bot + grad_left + grad_right) / 4
-    )
-
-    pc[pc > 255] = 255
-    pc[pc < 0] = 0
+    # pc[pc > 255] = 255
+    # pc[pc < 0] = 0
     pc[static] = -1
 
-    s = 0.9535
+    pc[0, :] = potential[0, :]
+    pc[-1, :] = potential[-1, :]
+    pc[:, 0] = potential[:, 0]
+    pc[:, -1] = potential[:, -1]
 
     return pc
 
-def fix_boundary(potential, m=False):
+def fix_boundary(potential):
     s = 0.9535
 
-    if m:
-        pc[0, :] = s * (2 * pc[1, :] - pc[2, :]) + (1-s) * pc[1, :]
-        pc[-1, :] = s * (2 * pc[-2, :] - pc[-3, :]) + (1-s) * pc[-2, :]
-        pc[:, 0] = s * (2 * pc[:, 1] - pc[:, 2]) + (1-s) * pc[:, 1]
-        pc[:, -1] = s * (2 * pc[:, -2] - pc[:, -3]) + (1-s) * pc[:, -2]
-    else:
-        pc[0, :] = pc[1, :]
-        pc[-1, :] = pc[-2, :]
-        pc[:, 0] = pc[:, 1]
-        pc[:, -1] = pc[:, -2]
+    pc = potential.copy()
+
+    pc[0, :] = s * (2 * pc[1, :] - pc[2, :]) + (1-s) * pc[1, :]
+    pc[-1, :] = s * (2 * pc[-2, :] - pc[-3, :]) + (1-s) * pc[-2, :]
+    pc[:, 0] = s * (2 * pc[:, 1] - pc[:, 2]) + (1-s) * pc[:, 1]
+    pc[:, -1] = s * (2 * pc[:, -2] - pc[:, -3]) + (1-s) * pc[:, -2]
+
+    # pc[0, :] = pc[1, :]
+    # pc[-1, :] = pc[-2, :]
+    # pc[:, 0] = pc[:, 1]
+    # pc[:, -1] = pc[:, -2]
+
+    pc[potential == -1] = potential[potential == -1]
 
     return pc
 
@@ -134,22 +145,6 @@ def update_electrode_condition(mask, center=(0,0), theta=0):
 
 if __name__ == "__main__":
     ### path & params
-
-    # zmin, ymin, xmin, electrode_label_level_pairs = 5049, 2533, 3380, [(2, 0.60)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 5049, 1765, 3380, [(1, 0.70)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 4281, 2533, 3380, [(2, 0.30)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 4281, 1765, 3380, [(1, 0.50), (2, 0.95)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 3513, 1900, 3400, [(1, 0.15), (2, 0.70)]
-    zmin, ymin, xmin, electrode_label_level_pairs = 2736, 1831, 3413, [(1, 0.20), (2, 0.75)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 1968, 1860, 3424, [(1, 0.20), (2, 0.95)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1800, 2990, [(1, 0.60)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1800, 2990, [(1, 0.60)]
-    # zmin, ymin, xmin, electrode_label_level_pairs = 1200, 1537, 3490, [(1, 0.65)]
-
-    dirname = f'/Users/yao/Desktop/full-scrolls/community-uploads/yao/scroll1/{zmin:05}_{ymin:05}_{xmin:05}/'
-
-    electrode_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_mask.nrrd')
-
     rescale = (1, 3, 3)
 
     ### load electrode
@@ -209,17 +204,17 @@ if __name__ == "__main__":
     # update potential
     plt.ion()
 
-    for i in range(2000):
+    for i in range(80):
         # electrodes should remain constant
         for label, level in electrode_label_level_pairs:
             potential[electrode == label] = level * 255
         potential[electrode == 10] = 128
 
-        if (i<1000 or i%2==0): pc = fix_gradient(potential[d//2, :, :])
-        if (i>=1000 and i%2!=0): pc = update_potential(potential[d//2, :, :])
-
-        if (i<1000): pc = fix_boundary(pc, False) 
-        if (i>=1000): pc = fix_boundary(pc, True)
+        if -1 in potential[d//2, 1:-1, 1:-1]:
+            pc = fix_gradient(potential[d//2, :, :])
+        else:
+            pc = update_potential(potential[d//2, :, :])
+            pc = fix_boundary(pc)
 
         potential[d//2, :, :] = pc
 
@@ -233,7 +228,7 @@ if __name__ == "__main__":
 
             plt.pause(0.01)
 
-        if (i%10 == 0 and i < 100):
+        if (i%3 == 0 and i < 100):
             print(i)
             axes[1].imshow(potential[d//2, :, :], cmap=cmap)
             axes[3].imshow(potential[d//2, :, :], cmap="gray")

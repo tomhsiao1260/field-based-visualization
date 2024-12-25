@@ -62,6 +62,8 @@ Here is a video showcasing the final results. When navigating along the y-axis, 
 
 [![Watch the video](https://img.youtube.com/vi/SjwqX3PbRD4/hqdefault.jpg)](https://www.youtube.com/watch?v=SjwqX3PbRD4)
 
+## How to run
+
 ## Further Studies
 
 This visualization method opens up several new possibilities:  

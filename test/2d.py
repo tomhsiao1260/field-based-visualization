@@ -73,6 +73,12 @@ def fix_gradient(potential):
     left = pc_pad[1:-1,  :-2].copy()
     right = pc_pad[1:-1,   2:].copy()
 
+    # h, w = potential.shape
+    # y, x = np.ogrid[:h, :w]
+
+    # targetX, targetY = (0, h)
+    # dirX, dirY = targetX - x, targetY - y
+
     decay = (top == -1) & (bot != -1)
     grow = (top != -1) & (bot == -1)
     static = (top == -1) & (bot == -1) & (left == -1) & (right == -1)
@@ -97,6 +103,24 @@ def fix_gradient(potential):
     right[right == -1] = center[right == -1]
 
     pc = (top + bot + left + right) / 4
+
+    # grad_top = center - top
+    # grad_bot = center - bot
+    # grad_left = center - left
+    # grad_right = center - right
+
+    # max_gradient = 1
+
+    # # 限制梯度：若梯度超過 max_gradient，則進行修正
+    # grad_top = np.where(grad_top > max_gradient, max_gradient, grad_top)
+    # grad_bot = np.where(grad_bot > max_gradient, max_gradient, grad_bot)
+    # grad_left = np.where(grad_left > max_gradient, max_gradient, grad_left)
+    # grad_right = np.where(grad_right > max_gradient, max_gradient, grad_right)
+
+    # # 修正中心值：根據調整後的梯度進行平滑更新
+    # pc = center - 1.0 * (
+    #     (grad_top + grad_bot + grad_left + grad_right) / 4
+    # )
 
     # pc[pc > 255] = 255
     # pc[pc < 0] = 0
@@ -204,7 +228,7 @@ if __name__ == "__main__":
     # update potential
     plt.ion()
 
-    for i in range(80):
+    for i in range(10):
         # electrodes should remain constant
         for label, level in electrode_label_level_pairs:
             potential[electrode == label] = level * 255

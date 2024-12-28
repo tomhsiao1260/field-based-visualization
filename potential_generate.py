@@ -19,7 +19,7 @@ from matplotlib.colors import ListedColormap
 from concurrent.futures import ThreadPoolExecutor
 
 # see config_template.py & generate a config.py file (version 1)
-from config import labels, volume_dir, electrode_dir, conductor_dir
+from config import volume_dir, electrode_dir, conductor_dir
 from config import conductor_x_dir, conductor_z_dir, potential_dir, potential_init_dir
 
 def down_sampling(array, rescale=(1,1,1), mean=True):
@@ -204,12 +204,18 @@ def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
 if __name__ == "__main__":
     ### params
     parser = argparse.ArgumentParser(description='potential calculation')
+    parser.add_argument('--z', type=int, help='z index')
+    parser.add_argument('--y', type=int, help='y index')
+    parser.add_argument('--x', type=int, help='x index')
+    parser.add_argument('--labels', type=int, nargs='+', help='list of electrode labels')
     parser.add_argument('--plot', action="store_true", help='plot the potential')
     parser.add_argument('--num_worker', type=int, default=8, help='worker numbers')
     parser.add_argument('--auto_conductor', action="store_true", help='auto generate the conductor mask')
     args = parser.parse_args()
 
-    num_worker, plot, auto_conductor = args.num_worker, args.plot, args.auto_conductor
+    plot, labels = args.plot, args.labels
+    zmin, ymin, xmin = args.z, args.y, args.x
+    num_worker, auto_conductor = args.num_worker, args.auto_conductor
 
     if auto_conductor:
         rescale_a, rescale_b = (5, 5, 5), (1, 1, 1)
@@ -227,12 +233,14 @@ if __name__ == "__main__":
         cmap = ListedColormap(colors)
 
     ### load volume
-    volume_origin, header = nrrd.read(volume_dir)
+    volume_path = volume_dir.format(zmin, ymin, xmin, zmin, ymin, xmin)
+    volume_origin, header = nrrd.read(volume_path)
     volume = down_sampling(volume_origin, rescale_a)
     d, h, w = volume.shape
 
     ### load electrode
-    electrode, header = nrrd.read(electrode_dir)
+    electrode_path = electrode_dir.format(zmin, ymin, xmin, zmin, ymin, xmin)
+    electrode, header = nrrd.read(electrode_path)
     electrode = np.asarray(electrode)
     electrode = down_sampling(electrode, rescale_a, False)
 
@@ -260,9 +268,10 @@ if __name__ == "__main__":
         conductor_zo = generate_edge(volume)
         conductor_xo = generate_edge(volume.transpose(2, 1, 0)).transpose(2, 1, 0)
     else:
-        if not os.path.exists(conductor_dir): sys.exit('conductor not found, please use --auto_conductor instead')
+        conductor_path = conductor_dir.format(zmin, ymin, xmin, zmin, ymin, xmin)
+        if not os.path.exists(conductor_path): sys.exit('conductor not found, please use --auto_conductor instead')
 
-        conductor_zo, header = nrrd.read(conductor_dir)
+        conductor_zo, header = nrrd.read(conductor_path)
         conductor_zo = np.asarray(conductor_zo).astype(bool)
         conductor_zo = down_sampling(conductor_zo, rescale_a, False)
         conductor_xo = conductor_zo.copy()
@@ -277,24 +286,28 @@ if __name__ == "__main__":
     ### conductor graph
 
     # along z
-    if os.path.exists(conductor_z_dir):
-        conductor_z, _ = nrrd.read(conductor_z_dir)
+    conductor_z_path = conductor_z_dir.format(zmin, ymin, xmin, zmin, ymin, xmin)
+
+    if os.path.exists(conductor_z_path):
+        conductor_z, _ = nrrd.read(conductor_z_path)
     else:
         conductor_z = np.zeros_like(volume)
         for z in range(d): conductor_z[z, :, :] = skeletonize(conductor_zo[z, : , :])
 
         conductor_z = generate_mask(conductor_z, num_worker)
-        nrrd.write(conductor_z_dir, conductor_z)
+        nrrd.write(conductor_z_path, conductor_z)
 
     # along x
-    if os.path.exists(conductor_x_dir):
-        conductor_x, _ = nrrd.read(conductor_x_dir)
+    conductor_x_path = conductor_x_dir.format(zmin, ymin, xmin, zmin, ymin, xmin)
+
+    if os.path.exists(conductor_x_path):
+        conductor_x, _ = nrrd.read(conductor_x_path)
     else:
         conductor_x = np.zeros_like(volume)
         for x in range(w): conductor_x[:, :, x] = skeletonize(conductor_xo[:, :, x])
 
         conductor_x = generate_mask(conductor_x.transpose(2, 1, 0), num_worker).transpose(2, 1, 0)
-        nrrd.write(conductor_x_dir, conductor_x)
+        nrrd.write(conductor_x_path, conductor_x)
 
     if (plot):
         axes[2].set_title("Discrete Conductor")
@@ -318,8 +331,9 @@ if __name__ == "__main__":
     # potential (init)
     potential = np.zeros_like(electrode, dtype=float)
     boundary = np.zeros_like(electrode, dtype=bool)
+    potential_init_path = potential_init_dir.format(zmin, ymin, xmin, zmin, ymin, xmin)
 
-    if not os.path.exists(potential_init_dir):
+    if not os.path.exists(potential_init_path):
         # in some cases, may need some adjustments for better convergence
         print('potential_init.nrrd not found, use default potential config instead')
 
@@ -330,7 +344,7 @@ if __name__ == "__main__":
         boundary[:, :1, :] = True
         boundary[:, -1:, :] = True
     else:
-        potential, header = nrrd.read(potential_init_dir)
+        potential, header = nrrd.read(potential_init_path)
 
     # update potential
     counts_z = np.zeros((d, 256), dtype=int)
@@ -341,11 +355,15 @@ if __name__ == "__main__":
     for x in range(w):
         counts_x[x] = np.bincount(conductor_x[:, :, x].flatten(), minlength=256)
 
+    label_level_pairs = []
+    for label in labels:
+        level = potential[electrode == label].mean()
+        label_level_pairs.append((label, level))
+
     if (plot): plt.ion()
     for i in range(501):
         # electrodes should remain constant
-        for label in labels:
-            level = potential[electrode == label].mean()
+        for label, level in label_level_pairs:
             potential[electrode == label] = level
 
         # potential (free space)
@@ -392,7 +410,8 @@ if __name__ == "__main__":
                     axes[4].imshow(flatten[d0//2], cmap="gray")
                     axes[9].imshow(flatten[:, :, w0//2], cmap='gray')
 
-                nrrd.write(potential_dir, potential.astype(np.uint8))
+                potential_path = potential_dir.format(zmin, ymin, xmin, zmin, ymin, xmin)
+                nrrd.write(potential_path, potential.astype(np.uint8))
 
             if (plot): plt.pause(0.001)
     if (plot): plt.ioff()

@@ -2,6 +2,7 @@
 
 import os
 import nrrd
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -9,8 +10,7 @@ from tqdm import tqdm
 from skimage.morphology import skeletonize
 from matplotlib.colors import ListedColormap
 
-from config import potential_init_dir
-from config import labels, electrode_dir
+from config import potential_init_dir, electrode_dir
 
 def copy_boundary(a, b):
     a[0, :, :] = b[0, :, :]
@@ -56,19 +56,19 @@ def down_sampling(array, rescale=(1,1,1), mean=True):
     return downscaled
 
 # potential (0~1) & side mask (bool) for a given electrode (bool)
-def generate_potential_side(electrode, target=(0,0,0), plot=None):
-    potential = generate_normalized_potential(electrode, plot)
+def generate_potential_side(electrode, target=(0,0,0), plot_info=None):
+    potential = generate_normalized_potential(electrode, plot_info)
     contour = np.zeros_like(potential, dtype=bool)
     contour[potential > 0.95] = True
 
-    side = generate_side(contour, target, plot)
+    side = generate_side(contour, target, plot_info)
     return potential, side
 
 # generate normalized potential (0~1) from electrode (bool)
-def generate_normalized_potential(electrode, plot=None):
+def generate_normalized_potential(electrode, plot_info=None):
     d, h, w = electrode.shape
     potential = np.zeros_like(electrode, dtype=float)
-    if plot: axes, cmap = plot
+    if plot: axes, cmap = plot_info
 
     print('potential generation ...')
     for i in tqdm(range(501)):
@@ -91,10 +91,10 @@ def generate_normalized_potential(electrode, plot=None):
     return potential
 
 # generate side mask for a given contour (bool)
-def generate_side(contour, target=(0,0,0), plot=None):
+def generate_side(contour, target=(0,0,0), plot_info=None):
     d, h, w = contour.shape
     side = np.zeros_like(contour, dtype=bool)
-    if plot: axes, cmap = plot
+    if plot_info: axes, cmap = plot_info
 
     # init trigger points (target: xyz)
     side[target[2], target[1], target[0]] = True
@@ -103,7 +103,7 @@ def generate_side(contour, target=(0,0,0), plot=None):
     for i in tqdm(range(w+h+d)):
         side = update_side(side, contour)
 
-        if plot:
+        if plot_info:
             if (i%30 == 0):
                 axes[1].set_title("Side")
                 axes[1].imshow(side[d//2, :, :], cmap="gray")
@@ -190,23 +190,44 @@ def update_side(side, contour):
 
 if __name__ == "__main__":
     ### params
-    rescale = (3*2, 3*2, 3*2)
+    parser = argparse.ArgumentParser(description='potential init calculation')
+    parser.add_argument('--z', type=int, help='z index')
+    parser.add_argument('--y', type=int, help='y index')
+    parser.add_argument('--x', type=int, help='x index')
+    parser.add_argument('--plot', action="store_true", help='plot the potential')
+    parser.add_argument('--labels', type=int, nargs='+', help='list of electrode labels')
+    parser.add_argument('--auto_conductor', action="store_true", help='auto generate the conductor mask')
+    args = parser.parse_args()
+
+    zmin, ymin, xmin = args.z, args.y, args.x
+    plot, labels, auto_conductor = args.plot, args.labels, args.auto_conductor
+
+    if auto_conductor:
+        rescale = (5*1, 5*1, 5*1)
+    else:
+        rescale = (3*2, 3*2, 3*2)
 
     ### load electrode
-    electrode, header = nrrd.read(electrode_dir)
+    electrode_path = electrode_dir.format(zmin, ymin, xmin, zmin, ymin, xmin)
+    electrode, header = nrrd.read(electrode_path)
     electrode = np.asarray(electrode)[:, :, :]
     electrode = down_sampling(electrode, rescale, False)
     d, h, w = electrode.shape
 
     ### plot init
-    fig, axes = plt.subplots(2, 6, figsize=(10, 4))
+    plot_info = None
 
-    axes = axes.ravel()
-    for ax in axes: ax.axis('off')
+    if (plot):
+        fig, axes = plt.subplots(2, 6, figsize=(10, 4))
 
-    colors = ['#000000', '#ffffff'] * 20
-    cmap = ListedColormap(colors)
-    plt.ion()
+        axes = axes.ravel()
+        for ax in axes: ax.axis('off')
+
+        colors = ['#000000', '#ffffff'] * 20
+        cmap = ListedColormap(colors)
+        plot_info = (axes, cmap)
+
+        plt.ion()
 
     ### handling each electrode
     for label in labels:
@@ -219,9 +240,8 @@ if __name__ == "__main__":
             skeleton = skeletonize(mask_label[z])
             electrode_single[z][skeleton] = True
 
-        plot = (axes, cmap)
         target = (w//2, 0, d//2)
-        normailized_potential, side = generate_potential_side(electrode_single, target, plot)
+        normailized_potential, side = generate_potential_side(electrode_single, target, plot_info)
 
         # combine potential via side mask
         potential = np.ones_like(normailized_potential, dtype=float)
@@ -231,21 +251,25 @@ if __name__ == "__main__":
         p_min = np.min(potential)
         p_max = np.max(potential)
         potential = (potential - p_min) / (p_max - p_min)
-        potential = (255 + 50 * 2) * potential - 50
+        potential = 255 * potential
+        # potential = (255 + 50 * 2) * potential - 50
 
-        axes[2].set_title("Potential")
-        axes[2].imshow(potential[d//2, :, :], cmap=cmap)
-        axes[3].imshow(potential[d//2, :, :], cmap="gray")
-        axes[8].imshow(potential[:, :, w//2], cmap=cmap)
-        axes[9].imshow(potential[:, :, w//2], cmap="gray")
+        if (plot):
+            axes[2].set_title("Potential")
+            axes[2].imshow(potential[d//2, :, :], cmap=cmap)
+            axes[3].imshow(potential[d//2, :, :], cmap="gray")
+            axes[8].imshow(potential[:, :, w//2], cmap=cmap)
+            axes[9].imshow(potential[:, :, w//2], cmap="gray")
 
         # save init potential
-        nrrd.write(potential_init_dir, potential)
+        potential_init_path = potential_init_dir.format(zmin, ymin, xmin, zmin, ymin, xmin)
+        nrrd.write(potential_init_path, potential)
 
     print('complete')
-    plt.ioff()
-    plt.tight_layout()
-    plt.show()
+    if (plot):
+        plt.ioff()
+        plt.tight_layout()
+        plt.show()
 
 
 

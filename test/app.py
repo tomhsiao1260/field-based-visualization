@@ -18,9 +18,11 @@ from skimage.morphology import skeletonize
 from matplotlib.colors import ListedColormap
 from concurrent.futures import ThreadPoolExecutor
 
-# see config_template.py & generate a config.py file (version 1)
-from config import labels, volume_dir, electrode_dir, conductor_dir
-from config import conductor_x_dir, conductor_z_dir, potential_dir, potential_init_dir
+# see config_template.py & generate a config.py file (version 0)
+from config import electrode_label_level_pairs
+from config import volume_dir, electrode_dir, conductor_dir
+from config import potential_dir, potential_init_dir
+from config import conductor_x_dir, conductor_z_dir
 
 def down_sampling(array, rescale=(1,1,1), mean=True):
     rz, ry, rx = rescale
@@ -219,12 +221,8 @@ if __name__ == "__main__":
     ### plot init
     if (plot):
         fig, axes = plt.subplots(2, 5, figsize=(10, 4))
-
         axes = axes.ravel()
         for ax in axes: ax.axis('off')
-
-        colors = ['#000000', '#ffffff'] * 20
-        cmap = ListedColormap(colors)
 
     ### load volume
     volume_origin, header = nrrd.read(volume_dir)
@@ -238,7 +236,7 @@ if __name__ == "__main__":
 
     electrode_temp = np.zeros_like(electrode)
 
-    for label in labels:
+    for label, level in electrode_label_level_pairs:
         print('Processing electrode:', label)
         mask_label = (electrode == label).astype(np.uint8)
 
@@ -301,38 +299,41 @@ if __name__ == "__main__":
         axes[2].imshow(conductor_z[d//2, :, :], cmap="nipy_spectral", origin="upper")
         axes[7].imshow(conductor_x[:, :, w//2], cmap="nipy_spectral", origin="upper")
 
+    # potential (init)
+    potential = np.zeros_like(conductor_z, dtype=float)
+    # in some cases, may need some adjustments for better convergence
+    # for y in range(h): potential[:, y, :] = (y / h) * 255
+    # potential[:, :1, :] = 0
+    # potential[:, -1:, :] = 255
+
+    boundary = np.zeros_like(conductor_z, dtype=bool)
+    # boundary[:, :1, :] = True
+    # boundary[:, -1:, :] = True
+
     # rescale again
+    potential = down_sampling(potential, rescale_b)
     electrode = down_sampling(electrode, rescale_b, False)
+    boundary = down_sampling(boundary, rescale_b, False)
 
     conductor_x = down_sampling(conductor_x, (rescale_b[0], rescale_b[1], 1), False)
     conductor_z = down_sampling(conductor_z, (1, rescale_b[1], rescale_b[2]), False)
     conductor_x = conductor_x[:, :, ::rescale_b[2]]
     conductor_z = conductor_z[::rescale_b[0], :, :]
 
-    d, h, w = electrode.shape
+    d, h, w = potential.shape
 
     if (plot):
         axes[2].imshow(conductor_z[d//2, :, :], cmap="nipy_spectral", origin="upper")
         axes[7].imshow(conductor_x[:, :, w//2], cmap="nipy_spectral", origin="upper")
 
-    # potential (init)
-    potential = np.zeros_like(electrode, dtype=float)
-    boundary = np.zeros_like(electrode, dtype=bool)
-
-    if not os.path.exists(potential_init_dir):
-        # in some cases, may need some adjustments for better convergence
-        print('potential_init.nrrd not found, use default potential config instead')
-
-        for y in range(h): potential[:, y, :] = (y / h) * 255
-        potential[:, :1, :] = 0
-        potential[:, -1:, :] = 255
-
-        boundary[:, :1, :] = True
-        boundary[:, -1:, :] = True
-    else:
+    # load init potential if exists
+    if os.path.exists(potential_init_dir):
         potential, header = nrrd.read(potential_init_dir)
 
     # update potential
+    colors = ['#000000', '#ffffff'] * 20
+    cmap = ListedColormap(colors)
+
     counts_z = np.zeros((d, 256), dtype=int)
     for z in range(d):
         counts_z[z] = np.bincount(conductor_z[z, :, :].flatten(), minlength=256)
@@ -342,11 +343,10 @@ if __name__ == "__main__":
         counts_x[x] = np.bincount(conductor_x[:, :, x].flatten(), minlength=256)
 
     if (plot): plt.ion()
-    for i in range(501):
+    for i in range(1501):
         # electrodes should remain constant
-        for label in labels:
-            level = potential[electrode == label].mean()
-            potential[electrode == label] = level
+        for label, level in electrode_label_level_pairs:
+            potential[electrode == label] = level * 255
 
         # potential (free space)
         pc = update_potential(potential)
@@ -380,8 +380,7 @@ if __name__ == "__main__":
                 axes[8].imshow(potential[:, :, w//2], cmap=cmap)
 
             # save the flatten result
-            if (i%500 == 0):
-            # if (i%500 == 0 and i != 0):
+            if (i%500 == 0 and i != 0):
                 print('update flatten result ...')
 
                 flatten = update_flatten(volume_origin, potential)

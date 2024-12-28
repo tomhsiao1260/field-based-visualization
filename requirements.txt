@@ -2,6 +2,7 @@ opencv-python
 pynrrd
 tifffile
 numpy
+tqdm
 networkx
 matplotlib
 scikit-image

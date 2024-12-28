@@ -62,6 +62,79 @@ Here is a video showcasing the final results. When navigating along the y-axis, 
 
 [![Watch the video](https://img.youtube.com/vi/SjwqX3PbRD4/hqdefault.jpg)](https://www.youtube.com/watch?v=SjwqX3PbRD4)
 
+## Toolkit
+
+### potential_transform.py
+
+`potential_transform.py` is a script for converting raw data into flattened data using a potential-based approach. The raw data can include volume data and masks.
+
+**1. Configuration Setup**
+
+Before running the script, you need to create a configuration file, config.py. Below is an example of how to define the required parameters:
+
+```py
+import os
+
+# electrode_label_level_pairs: [(label0, level0), (label1, level1), ...]
+# Label: select value in mask.nrrd (that you want it to become electrode)
+# Level: electrode horizontal position after flattening (between 0:top ~ 1:bottom)
+zmin, ymin, xmin, electrode_label_level_pairs = 3513, 1900, 3400, [(1, 0.15), (2, 0.70)]
+
+# path
+dirname = f'YOUR_SCROLL_DATA_PATH/{zmin:05}_{ymin:05}_{xmin:05}/'
+
+# input directory
+volume_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_volume.nrrd')
+electrode_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_mask.nrrd')
+conductor_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_fiber.nrrd')
+
+# output directory
+conductor_x_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_conductor_x.nrrd')
+conductor_z_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_conductor_z.nrrd')
+potential_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_potential.nrrd')
+
+volume_flatten_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_flatten.nrrd')
+electrode_flatten_dir = os.path.join(dirname, f'{zmin:05}_{ymin:05}_{xmin:05}_mask_flatten.nrrd')
+```
+
+#### Explanation of Parameters:
+
+`zmin, ymin, xmin`: Coordinates representing the starting point of the data region.
+`electrode_label_level_pairs`: A list of tuples defining the mapping between label values in the mask data and their corresponding levels in the flattened space.
+
+**2. Running the Script**
+
+You can execute the script with various options to process the data:
+
+#### Basic Transformation:
+
+```bash
+python potential_transform.py
+```
+
+This processes the volume data and generates the corresponding flattened output.
+
+#### Mask-Based Transformation:
+
+```bash
+python potential_transform.py --mask
+```
+
+This includes mask data in the processing pipeline and generates the flattened mask output.
+
+** 3. Output Files**
+
+After running the script, you can expect the following output files in the specified directories:
+
+- `*_flatten.nrrd`: Flattened volume data.
+- `*_mask_flatten.nrrd`: Flattened mask data.
+
+These outputs are essential for downstream analyses, such as electrode simulations or visualizations in flattened coordinate systems.
+
+### ppm.py
+
+`ppm.py` is a script for transforming between raw 3D coordinates and flattened 3D coordinates, using the (z, y, x) format standard.
+
 ## Further Studies
 
 This visualization method opens up several new possibilities:  

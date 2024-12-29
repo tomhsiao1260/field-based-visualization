@@ -56,12 +56,12 @@ def down_sampling(array, rescale=(1,1,1), mean=True):
     return downscaled
 
 # potential (0~1) & side mask (bool) for a given electrode (bool)
-def generate_potential_side(electrode, target=(0,0,0), plot_info=None):
+def generate_potential_side(electrode, plot_info=None):
     potential = generate_normalized_potential(electrode, plot_info)
     contour = np.zeros_like(potential, dtype=bool)
-    contour[potential > 0.95] = True
+    contour[potential > 0.99] = True
 
-    side = generate_side(contour, target, plot_info)
+    side = generate_side(contour, plot_info)
     return potential, side
 
 # generate normalized potential (0~1) from electrode (bool)
@@ -72,14 +72,19 @@ def generate_normalized_potential(electrode, plot_info=None):
 
     print('potential generation ...')
     for i in tqdm(range(501)):
+    # for i in tqdm(range(11)):
         # electrodes should remain constant
         potential[electrode] = 1
-        potential = update_potential(potential)
+        if (i < 300): potential = update_potential(potential, True)
+        if (i >= 300): potential = update_potential(potential)
+        # potential = update_potential(potential)
 
         if plot:
             if (i%20 == 0):
                 axes[0].set_title("Potential (norm)")
                 axes[0].imshow(potential[d//2, :, :], cmap=cmap)
+                # axes[1].imshow(potential[(d-(5))//2, :, :], cmap=cmap)
+                # axes[2].imshow(potential[(d-(10))//2, :, :], cmap=cmap)
                 axes[6].imshow(potential[:, :, w//2], cmap=cmap)
                 axes[0].contour(electrode[d//2, :, :], colors='blue', linewidths=0.5)
                 axes[6].contour(electrode[:, :, w//2], colors='blue', linewidths=0.5)
@@ -91,31 +96,40 @@ def generate_normalized_potential(electrode, plot_info=None):
     return potential
 
 # generate side mask for a given contour (bool)
-def generate_side(contour, target=(0,0,0), plot_info=None):
-    d, h, w = contour.shape
-    side = np.zeros_like(contour, dtype=bool)
+def generate_side(contour, plot_info=None):
     if plot_info: axes, cmap = plot_info
 
-    # init trigger points (target: xyz)
-    side[target[2], target[1], target[0]] = True
+    d, h, w = contour.shape
+    side_a = np.zeros_like(contour, dtype=bool)
+    side_b = np.zeros_like(contour, dtype=bool)
+
+    # init trigger lines
+    side_a[:, :-5, :] = contour[:, 5:, :] # curve move up
+    side_b[:, 5:, :] = contour[:, :-5, :] # curve move down
 
     print('side generation ...')
     for i in tqdm(range(w+h+d)):
-        side = update_side(side, contour)
+        if (i < w+h):
+            side_a = update_side(side_a, side_b, True)
+            side_b = update_side(side_b, side_a, True)
+        else:
+            side_a = update_side(side_a, side_b, False)
+            side_b = update_side(side_b, side_a, False)
+
 
         if plot_info:
             if (i%30 == 0):
                 axes[1].set_title("Side")
-                axes[1].imshow(side[d//2, :, :], cmap="gray")
-                axes[7].imshow(side[:, :, w//2], cmap="gray")
+                axes[1].imshow(side_a[d//2, :, :], cmap="gray")
+                axes[7].imshow(side_a[:, :, w//2], cmap="gray")
                 plt.pause(0.01)
 
     # fill boundary
-    side = fill_boundary(side)
+    side = fill_boundary(side_a)
 
     return side
 
-def update_potential(potential):
+def update_potential(potential, plane_xy=False):
     pc_pad = np.pad(potential, pad_width=1, mode='edge')
 
     center = pc_pad[1:-1, 1:-1, 1:-1].copy()
@@ -141,7 +155,11 @@ def update_potential(potential):
     diff_front = np.where(diff_front > max_diff, max_diff, diff_front)
     diff_back  = np.where(diff_back > max_diff, max_diff, diff_back)
 
-    pc = center - (diff_top + diff_bot + diff_left + diff_right + diff_front + diff_back) / 6
+    if plane_xy:
+        pc = center - (diff_top + diff_bot + diff_left + diff_right) / 4
+    else:
+        pc = center - (diff_top + diff_bot + diff_left + diff_right + diff_front + diff_back) / 6
+        # pc = center - (diff_top + diff_bot + diff_left + diff_right + 0.1 * diff_front + 0.1 * diff_back) / 4.2
 
     # fixed boundary
     pc = copy_boundary(pc, potential)
@@ -149,7 +167,7 @@ def update_potential(potential):
     return pc
 
 # update side mask & fill in the corresponding side
-def update_side(side, contour):
+def update_side(side, contour, plane_xy=False):
     side_pad = np.pad(side, pad_width=1, mode='edge')
 
     top   = side_pad[1:-1,  :-2, 1:-1].copy()
@@ -159,7 +177,11 @@ def update_side(side, contour):
     front = side_pad[ :-2, 1:-1, 1:-1].copy()
     back  = side_pad[  2:, 1:-1, 1:-1].copy()
 
-    sc = (top == True) | (bot == True) | (left == True) | (right == True) | (front == True) | (back == True)
+    if plane_xy:
+        sc = (top == True) | (bot == True) | (left == True) | (right == True)
+    else:
+        sc = (top == True) | (bot == True) | (left == True) | (right == True) | (front == True) | (back == True)
+
     sc[contour != 0] = False # stop the propagation
 
     # fixed boundary
@@ -240,8 +262,7 @@ if __name__ == "__main__":
             skeleton = skeletonize(mask_label[z])
             electrode_single[z][skeleton] = True
 
-        target = (w//2, 0, d//2)
-        normailized_potential, side = generate_potential_side(electrode_single, target, plot_info)
+        normailized_potential, side = generate_potential_side(electrode_single, plot_info)
 
         # combine potential via side mask
         potential = np.ones_like(normailized_potential, dtype=float)

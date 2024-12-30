@@ -23,7 +23,7 @@ conductor_dir = os.path.join(dirname, '{:05}_{:05}_{:05}_fiber.nrrd')
 conductor_x_dir = os.path.join(dirname, '{:05}_{:05}_{:05}_conductor_x.nrrd')
 conductor_z_dir = os.path.join(dirname, '{:05}_{:05}_{:05}_conductor_z.nrrd')
 potential_init_dir = os.path.join(dirname, '{:05}_{:05}_{:05}_potential_init.nrrd')
-potential_dir = os.path.join(dirname, '{:05}_{:05}_{:05}_potential_v0.nrrd')
+potential_dir = os.path.join(dirname, '{:05}_{:05}_{:05}_potential_v1.nrrd')
 
 volume_flatten_dir = os.path.join(dirname, '{:05}_{:05}_{:05}_flatten.nrrd')
 electrode_flatten_dir = os.path.join(dirname, '{:05}_{:05}_{:05}_mask_flatten.nrrd')

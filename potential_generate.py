@@ -181,7 +181,7 @@ def update_flatten(volume, potential):
         flatten[z] = cv2.remap(volume[z], map_x, map_y, interpolation=cv2.INTER_LINEAR)
 
         # fix repeat edge issue
-        xmin, xmax, ymin, ymax = np.min(map_x), np.max(map_x)
+        xmin, xmax = np.min(map_x), np.max(map_x)
         ymin, ymax = np.min(map_y), np.max(map_y)
         flatten[z][(map_x == xmin) | (map_y == ymin)] = 0
         flatten[z][(map_x == xmax) | (map_y == ymax)] = 0

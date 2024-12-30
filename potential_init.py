@@ -73,19 +73,17 @@ def generate_normalized_potential(electrode, plot_info=None):
 
     print('potential generation ...')
     for i in tqdm(range(501)):
-    # for i in tqdm(range(11)):
         # electrodes should remain constant
         potential[electrode] = 1
+
+        # prevent propagation error from other z slices
         if (i < 300): potential = update_potential(potential, True)
-        if (i >= 300): potential = update_potential(potential)
-        # potential = update_potential(potential)
+        if (i >= 300): potential = update_potential(potential, False)
 
         if plot:
             if (i%20 == 0):
                 axes[0].set_title("Potential (norm)")
                 axes[0].imshow(potential[d//2, :, :], cmap=cmap)
-                # axes[1].imshow(potential[(d-(5))//2, :, :], cmap=cmap)
-                # axes[2].imshow(potential[(d-(10))//2, :, :], cmap=cmap)
                 axes[6].imshow(potential[:, :, w//2], cmap=cmap)
                 axes[0].contour(electrode[d//2, :, :], colors='blue', linewidths=0.5)
                 axes[6].contour(electrode[:, :, w//2], colors='blue', linewidths=0.5)
@@ -190,27 +188,6 @@ def update_side(side, contour, plane_xy=False):
 
     return sc
 
-# # potential init (for better convergence)
-# def potential_init(electrode, electrode_label_level_pairs):
-#     potential = None
-#     d, h, w = electrode.shape
-
-#     for label, level in electrode_label_level_pairs:
-#         electrode_single = np.zeros_like(electrode, dtype=bool)
-#         electrode_single[electrode == label] = True
-
-#         target_a = (0, 0)
-#         target_b = (w-1, h-1)
-#         normailized_potential, side_a, side_b = generate_potential_side(electrode_single, target_a, target_b)
-
-#         # combine side a & b potential
-#         potential = level * np.ones_like(normailized_potential, dtype=float)
-#         potential[side_a] = level * normailized_potential[side_a] # forward
-#         potential[side_b] = level * (2 - normailized_potential[side_b]) # reverse
-#         potential *= 255
-
-#     return potential
-
 if __name__ == "__main__":
     ### params
     parser = argparse.ArgumentParser(description='potential init calculation')
@@ -250,11 +227,18 @@ if __name__ == "__main__":
         cmap = ListedColormap(colors)
         plot_info = (axes, cmap)
 
+        plt.tight_layout()
         plt.ion()
 
-    ### handling each electrode
+    ### handling each electrode (only labels 1, 2 so far)
+    p1, p2, s1, s2 = None, None, None, None
+
     for label in labels:
-        print('Processing electrode:', label)
+        if label > 2:
+            print('Skip electrode ', label)
+            continue
+        else:
+            print('Processing electrode:', label)
 
         mask_label = (electrode == label).astype(np.uint8)
         electrode_single = np.zeros_like(electrode, dtype=bool)
@@ -264,36 +248,62 @@ if __name__ == "__main__":
             electrode_single[z][skeleton] = True
 
         normailized_potential, side = generate_potential_side(electrode_single, plot_info)
-
-        # combine potential via side mask
-        potential = np.ones_like(normailized_potential, dtype=float)
-        potential[side] = normailized_potential[side] # forward
-        potential[~side] = 2 - normailized_potential[~side] # reverse
-
-        p_min = np.min(potential)
-        p_max = np.max(potential)
-        potential = (potential - p_min) / (p_max - p_min)
-        # potential = 255 * potential
-        potential = (255 + 50 * 2) * potential - 50
-
-        potential[potential < 0] = 0
-        potential[potential > 255] = 255
+        normailized_potential[~side] = 2 - normailized_potential[~side] # reverse one side
 
         if (plot):
-            axes[2].set_title("Potential")
-            axes[2].imshow(potential[d//2, :, :], cmap=cmap)
-            axes[3].imshow(potential[d//2, :, :], cmap="gray")
-            axes[8].imshow(potential[:, :, w//2], cmap=cmap)
-            axes[9].imshow(potential[:, :, w//2], cmap="gray")
+            axes[2].set_title("Potential (flip)")
+            axes[2].imshow(normailized_potential[d//2, :, :], cmap=cmap)
+            axes[3].imshow(normailized_potential[d//2, :, :], cmap="gray")
+            axes[8].imshow(normailized_potential[:, :, w//2], cmap=cmap)
+            axes[9].imshow(normailized_potential[:, :, w//2], cmap="gray")
 
-        # save init potential
-        potential_init_path = potential_init_dir.format(zmin, ymin, xmin, zmin, ymin, xmin)
-        nrrd.write(potential_init_path, potential)
+        if (label == 1):
+            p1 = normailized_potential.copy()
+            s1 = side.copy()
+        if (label == 2):
+            p2 = normailized_potential.copy()
+            s2 = side.copy()
+
+    # combine potential via side mask & save
+    if (p1 is not None) & (p2 is not None):
+        m1 = np.min(p2[~s1]) # min p2 value on label 1
+        m2 = np.min(p1[s2]) # min p1 value on label 2
+        p2_ = p2 + max(1-m1, m2-1) # shift p2 to fit p1 curve
+
+        # combine (top & bottom & middle)
+        p = p1.copy() # top
+        p[~s2] = p2_[~s2] # bottom
+
+        # middile
+        mask = ~s1 & s2
+        w1 = 1 / (abs(1-p1) + 1e-4) # wieght: closer electrode -> larger
+        w2 = 1 / (abs(1-p2) + 1e-4)
+        p[mask] = (w1[mask] * p1[mask] + w2[mask] * p2_[mask]) / (w1[mask] + w2[mask])
+    elif p1 is not None: p = p1
+    elif p2 is not None: p = p2
+
+    p_min = np.min(p)
+    p_max = np.max(p)
+    potential = (p - p_min) / (p_max - p_min)
+
+    potential = (255 + 50 * 2) * potential - 50
+    potential[potential < 0] = 0
+    potential[potential > 255] = 255
+
+    # plot & save
+    if (plot):
+        axes[4].set_title("Potential")
+        axes[4].imshow(potential[d//2, :, :], cmap=cmap)
+        axes[5].imshow(potential[d//2, :, :], cmap="gray")
+        axes[10].imshow(potential[:, :, w//2], cmap=cmap)
+        axes[11].imshow(potential[:, :, w//2], cmap="gray")
+
+    potential_init_path = potential_init_dir.format(zmin, ymin, xmin, zmin, ymin, xmin)
+    nrrd.write(potential_init_path, potential)
 
     print('complete')
     if (plot):
         plt.ioff()
-        plt.tight_layout()
         plt.show()
 
 

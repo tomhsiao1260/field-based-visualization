@@ -1,5 +1,6 @@
-# used to generate the initial potential
+### Yao Hsiao - Field-Based Visualization - 2024
 
+# used to generate the initial potential
 import os
 import nrrd
 import argparse
@@ -272,8 +273,11 @@ if __name__ == "__main__":
         p_min = np.min(potential)
         p_max = np.max(potential)
         potential = (potential - p_min) / (p_max - p_min)
-        potential = 255 * potential
-        # potential = (255 + 50 * 2) * potential - 50
+        # potential = 255 * potential
+        potential = (255 + 50 * 2) * potential - 50
+
+        potential[potential < 0] = 0
+        potential[potential > 255] = 255
 
         if (plot):
             axes[2].set_title("Potential")

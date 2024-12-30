@@ -119,15 +119,15 @@ def update_potential(potential):
     pc += pc_pad[  2:, 1:-1, 1:-1]
     pc /= 6
 
-    # # boundary fix
-    # s = 0.9535
+    # boundary fix
+    s = 0.9535
 
-    # pc[ 0, :, :] = s * (2 * pc[ 1, :, :] - pc[ 2, :, :]) + (1-s) * pc[ 1, :, :]
-    # pc[-1, :, :] = s * (2 * pc[-2, :, :] - pc[-3, :, :]) + (1-s) * pc[-2, :, :]
-    # pc[ :, 0, :] = s * (2 * pc[ :, 1, :] - pc[ :, 2, :]) + (1-s) * pc[ :, 1, :]
-    # pc[ :,-1, :] = s * (2 * pc[ :,-2, :] - pc[ :,-3, :]) + (1-s) * pc[ :,-2, :]
-    # pc[ :, :, 0] = s * (2 * pc[ :, :, 1] - pc[ :, :, 2]) + (1-s) * pc[ :, :, 1]
-    # pc[ :, :,-1] = s * (2 * pc[ :, :,-2] - pc[ :, :,-3]) + (1-s) * pc[ :, :,-2]
+    pc[ 0, :, :] = s * (2 * pc[ 1, :, :] - pc[ 2, :, :]) + (1-s) * pc[ 1, :, :]
+    pc[-1, :, :] = s * (2 * pc[-2, :, :] - pc[-3, :, :]) + (1-s) * pc[-2, :, :]
+    pc[ :, 0, :] = s * (2 * pc[ :, 1, :] - pc[ :, 2, :]) + (1-s) * pc[ :, 1, :]
+    pc[ :,-1, :] = s * (2 * pc[ :,-2, :] - pc[ :,-3, :]) + (1-s) * pc[ :,-2, :]
+    pc[ :, :, 0] = s * (2 * pc[ :, :, 1] - pc[ :, :, 2]) + (1-s) * pc[ :, :, 1]
+    pc[ :, :,-1] = s * (2 * pc[ :, :,-2] - pc[ :, :,-3]) + (1-s) * pc[ :, :,-2]
 
     return pc
 
@@ -180,18 +180,26 @@ def update_flatten(volume, potential):
         map_y = cv2.resize(map_y, (w0, h0), interpolation=cv2.INTER_LINEAR)
         flatten[z] = cv2.remap(volume[z], map_x, map_y, interpolation=cv2.INTER_LINEAR)
 
+        # fix repeat edge issue
+        flatten[z][map_x == 0 | map_y == 0] = 0
+        flatten[z][map_x == 255 | map_y == 255] = 0
+
     return flatten
 
 # potential sampling to generate flatten result
 def generate_2d_points_array(potential, points_top, points_bottom, num_depth):
+    # (w, 2): xy coords
     points_top = np.array(points_top)
     points_bottom = np.array(points_bottom)
 
+    # (num_depth, w, 2): xy coords
     points_grid = np.linspace(points_top, points_bottom, num_depth * 1, axis=0).astype(int)
-    potential_grid = potential[points_grid[..., 1], points_grid[..., 0]]
-    levels = np.linspace(0, 255, num_depth) 
 
-    # y, x, 2
+    # (num_depth, w): potential
+    potential_grid = potential[points_grid[..., 1], points_grid[..., 0]]
+    levels = np.linspace(0, 255, num_depth)
+
+    # (num_depth, w, 2): xy coords
     num_points = points_top.shape[0]
     points_array = np.zeros((num_depth, num_points, 2))
 

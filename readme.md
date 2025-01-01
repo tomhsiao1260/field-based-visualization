@@ -135,6 +135,22 @@ These outputs are essential for downstream analyses, such as electrode simulatio
 
 `ppm.py` is a script for transforming between raw 3D coordinates and flattened 3D coordinates, using the (z, y, x) format standard.
 
+Here is the usage for converting original coordinates to flattened coordinates:
+
+```bash
+# z, y, x represent the grid coordinates of the nrrd in the original coordinates, 
+# and zo, yo, xo represent the original coordinates you want to view.
+python ppm.py --z 1200 --y 2305 --x 3490 --zo 100 --yo 200 --xo 300
+```
+
+Here is the usage for converting flattened coordinates to original coordinates:
+
+```bash
+# z, y, x represent the grid coordinates of the nrrd in the flattened coordinates, 
+# and zf, yf, xf represent the flattened coordinates you want to view.
+python ppm.py --z 1200 --y 2305 --x 3490 --zf 100 --yf 200 --xf 300
+```
+
 ## Further Studies
 
 This visualization method opens up several new possibilities:  
